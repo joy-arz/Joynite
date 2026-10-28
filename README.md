@@ -1,3 +1,13 @@
+# macOS Tahoe edition
+
+This fork adds **Playnite for Mac**, a native SwiftUI library and launcher for macOS, with automatic game metadata, installed-game discovery, and native/store-client launching.
+
+**[macOS installation, capabilities, and build instructions](macos/README.md)** · **[Download macOS builds](https://github.com/joy-arz/Playnite/releases)**
+
+The Windows application and its source remain below. The Mac implementation lives in `macos/` and does not run Windows Playnite plugins or make Windows-only games native.
+
+---
+
 
 # <img src="https://playnite.link/applogo.png" width="32">  Playnite [![Crowdin](https://badges.crowdin.net/playnite/localized.svg)](https://crowdin.com/project/playnite)
 An open source video game library manager and launcher with support for 3rd party libraries like Steam, Epic, GOG, EA App, Battle.net and [others](https://playnite.link/addons.html). Includes game emulation support, providing one unified interface for your games.
