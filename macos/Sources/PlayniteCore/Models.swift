@@ -4,7 +4,15 @@ public enum Store: String, Codable, CaseIterable, Identifiable, Sendable {
     case local = "Mac", steam = "Steam", gog = "GOG", epic = "Epic", itch = "itch.io"
     public var id: String { rawValue }
 }
-public enum LaunchKind: String, Codable, Sendable { case application, store }
+public enum LaunchKind: String, Codable, Sendable { case application, store, compatibility }
+public struct CompatibilityLaunch: Codable, Equatable, Sendable {
+    public var executable: String
+    public var arguments: [String]
+    public var environment: [String: String]
+    public var workingDirectory: String
+    public var label: String
+    public init(executable: String, arguments: [String], environment: [String: String], workingDirectory: String, label: String) { self.executable = executable; self.arguments = arguments; self.environment = environment; self.workingDirectory = workingDirectory; self.label = label }
+}
 public struct Game: Identifiable, Codable, Equatable, Sendable {
     public var id: String
     public var name: String
@@ -21,6 +29,8 @@ public struct Game: Identifiable, Codable, Equatable, Sendable {
     public var backgroundArtwork: String?
     public var cachedArtwork: String?
     public var cachedBackground: String?
+    public var cachedLandscape: String?
+    public var compatibility: CompatibilityLaunch?
     public var hidden: Bool?
     public var pendingUninstall: Bool?
     public var storeURL = ""

@@ -1,0 +1,71 @@
+name: Cross-platform carousel
+on:
+  push:
+    paths: ['desktop/**', '.github/workflows/desktop.yml']
+  pull_request:
+    paths: ['desktop/**', '.github/workflows/desktop.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  desktop:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            bundles: nsis
+            name: Windows
+          - os: ubuntu-24.04
+            bundles: deb,appimage
+            name: Linux
+          - os: macos-15
+            bundles: app
+            name: macOS-shared
+    runs-on: ${{ matrix.os }}
+    env:
+      CARGO_TERM_COLOR: always
+      APPIMAGE_EXTRACT_AND_RUN: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/src-tauri -> target
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev librsvg2-dev patchelf libayatana-appindicator3-dev
+      - name: Install frontend dependencies
+        working-directory: desktop
+        run: npm ci
+      - name: Validate navigation and input logic
+        working-directory: desktop
+        run: npm test
+      - name: Build local frontend
+        working-directory: desktop
+        run: npm run build
+      - name: Validate native backend
+        working-directory: desktop
+        run: cargo test --manifest-path src-tauri/Cargo.toml --locked
+      - name: Build platform application
+        working-directory: desktop
+        run: npm run tauri -- build --bundles ${{ matrix.bundles }}
+      - name: Archive macOS app
+        if: runner.os == 'macOS'
+        run: ditto -c -k --sequesterRsrc --keepParent 'desktop/src-tauri/target/release/bundle/macos/Playnite Carousel.app' 'desktop/PlayniteCarousel-macOS.zip'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PlayniteCarousel-${{ matrix.name }}
+          if-no-files-found: error
+          path: |
+            desktop/src-tauri/target/release/bundle/nsis/*-setup.exe
+            desktop/src-tauri/target/release/bundle/deb/*.deb
+            desktop/src-tauri/target/release/bundle/appimage/*.AppImage
+            desktop/PlayniteCarousel-macOS.zip

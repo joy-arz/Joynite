@@ -21,8 +21,7 @@ struct PlayniteApplication: App {
             LibraryView().environmentObject(model).frame(minWidth: 980, minHeight: 660)
                 .preferredColorScheme(.dark)
                 .task {
-                    if model.games.isEmpty { await model.scan() }
-                    await model.prepareOfflineLibrary()
+                    await model.startup()
                 }
         }.defaultSize(width: 1440, height: 900)
             .commands {
@@ -58,6 +57,8 @@ struct LibraryView: View {
     @Environment(\.accessibilityReduceMotion) private var reducedMotion
     @Environment(\.scenePhase) private var scenePhase
     @FocusState private var searchFocused: Bool
+    @FocusState private var toolbarFocus: Int?
+    @State private var backdropGame: Game?
     var body: some View {
         ZStack {
             backdrop
@@ -102,6 +103,11 @@ struct LibraryView: View {
                 input.start(); model.ensureSelection()
             }
             .onDisappear { input.stop() }
+            .task(id: (model.selection ?? "") + (model.selected?.cachedBackground ?? "")) {
+                let game = model.selected
+                do { try await Task.sleep(nanoseconds: 80_000_000) } catch { return }
+                backdropGame = game
+            }
             .onChange(of: model.search) { _, _ in model.ensureSelection() }
             .onChange(of: model.filter) { _, _ in model.ensureSelection() }
             .onChange(of: model.searchRequested) { _, _ in searchFocused = true }
@@ -110,17 +116,17 @@ struct LibraryView: View {
     private var backdrop: some View {
         ZStack {
             Color.black
-            if let game = model.selected {
-                Artwork(game: game, background: true).id(game.cachedBackground ?? game.backgroundArtwork ?? game.id)
-                    .opacity(0.55).blur(radius: 3).transition(.opacity)
+            if let game = backdropGame {
+                Artwork(game: game, role: .background).id(game.cachedBackground ?? game.backgroundArtwork ?? game.id)
+                    .opacity(0.50).transition(.opacity)
             }
             LinearGradient(stops: [.init(color: .black.opacity(0.7), location: 0), .init(color: .black.opacity(0.3), location: 0.45), .init(color: .black.opacity(0.95), location: 1)], startPoint: .top, endPoint: .bottom)
         }.ignoresSafeArea().allowsHitTesting(false)
-            .animation(reducedMotion ? nil : .easeInOut(duration: 0.35), value: model.selection)
+            .animation(reducedMotion ? nil : .easeOut(duration: 0.16), value: backdropGame?.id)
     }
     private var header: some View {
         HStack(spacing: 18) {
-            Button { model.showLibrary.toggle() } label: { Image(systemName: "sidebar.left").font(.title3).frame(width: 34, height: 34) }.help("Libraries (L)")
+            Button { model.showLibrary.toggle() } label: { Image(systemName: "sidebar.left").font(.title3).frame(width: 34, height: 34) }.focused($toolbarFocus, equals: 0).focusEffectDisabled().overlay(RoundedRectangle(cornerRadius: 6).stroke(toolbarFocus == 0 ? Palette.accent : .clear, lineWidth: 1.5)).help("Libraries (L)")
             HStack(spacing: 8) { Image(systemName: "gamecontroller.fill").foregroundStyle(Palette.accent); Text("Playnite").font(.system(size: 24, weight: .bold, design: .rounded)) }
             Text(model.filter).font(.callout).foregroundStyle(.secondary)
             Spacer()
@@ -138,7 +144,7 @@ struct LibraryView: View {
                 Button("Publisher metadata catalog") { model.showPublisherCatalog = true }
                 Button("Help and notices") { model.showHelp = true }
             } label: { Label("Add / manage", systemImage: "plus") }.menuStyle(.borderlessButton).fixedSize()
-            Button { model.showDetails.toggle() } label: { Image(systemName: "sidebar.right").font(.title3).frame(width: 34, height: 34) }.help("Game details (Shift)")
+            Button { model.showDetails.toggle() } label: { Image(systemName: "sidebar.right").font(.title3).frame(width: 34, height: 34) }.focused($toolbarFocus, equals: 1).focusEffectDisabled().overlay(RoundedRectangle(cornerRadius: 6).stroke(toolbarFocus == 1 ? Palette.accent : .clear, lineWidth: 1.5)).help("Game details (Shift)")
         }.buttonStyle(.plain).padding(.horizontal, 30).padding(.vertical, 22)
     }
     private var selectionCaption: some View {
@@ -209,7 +215,7 @@ struct LibraryView: View {
     }
 }
 private struct CarouselSlot: Identifiable {
-    let id: String
+    let id: Int
     let game: Game
     let offset: Int
 }
@@ -223,13 +229,13 @@ struct CarouselView: View {
         return Carousel.slots(count: games.count).compactMap { offset in
             guard let index = Carousel.wrappedIndex(center + offset, count: games.count) else { return nil }
             let game = games[index]
-            return CarouselSlot(id: games.count >= 5 ? game.id : game.id + ":" + String(offset), game: game, offset: offset)
+            return CarouselSlot(id: model.carouselPosition + offset, game: game, offset: offset)
         }
     }
     var body: some View {
         GeometryReader { geometry in
-            let width = min(geometry.size.width * 0.30, 410)
-            let height = min(geometry.size.height - 14, width * 1.32)
+            let width = min(geometry.size.width * 0.30, 410, max(220, (geometry.size.height - 20) * 2 / 3))
+            let height = width * 1.5
             ZStack {
                 ForEach(displaySlots) { slot in
                         let game = slot.game
@@ -237,18 +243,17 @@ struct CarouselView: View {
                         let distance = abs(offset)
                         let scale = distance == 0 ? 1.0 : distance == 1 ? 0.78 : 0.59
                         let spacing = distance == 0 ? 0 : distance == 1 ? width * 0.80 : width * 1.37
-                        Button { model.selection = game.id } label: {
+                        Button { model.move(offset) } label: {
                             CarouselCard(game: game, selected: offset == 0)
                                 .frame(width: width, height: max(260, height))
                         }.buttonStyle(.plain).scaleEffect(scale)
-                            .rotation3DEffect(.degrees(offset == 0 || reducedMotion ? 0 : offset < 0 ? 12 : -12), axis: (x: 0, y: 1, z: 0), perspective: 0.3)
                             .opacity(distance == 0 ? 1 : distance == 1 ? 0.83 : 0.50)
                             .offset(x: CGFloat(offset < 0 ? -1 : 1) * spacing + drag * 0.18, y: distance == 0 ? -10 : CGFloat(distance * 10))
-                            .zIndex(Double(3 - distance))
+                            .zIndex(Double(3 - distance)).transition(.opacity)
                             .accessibilityLabel("\(game.name)\(offset == 0 ? ", selected" : "")")
                             .contextMenu {
                                 Button("Play") { model.launch(game) }
-                                Button("Game details") { model.selection = game.id; model.showDetails = true }
+                                Button("Game details") { model.move(offset); model.showDetails = true }
                                 Button(game.favorite ? "Remove favorite" : "Add favorite") { model.toggleFavorite(game) }
                                 Divider()
                                 Button("Uninstall…") { model.uninstall(game) }
@@ -265,32 +270,41 @@ struct CarouselView: View {
                 .gesture(DragGesture(minimumDistance: 20).onChanged { drag = $0.translation.width }.onEnded { value in
                     if abs(value.translation.width) > 45 { model.move(value.translation.width < 0 ? 1 : -1) }; drag = 0
                 })
-                .animation(reducedMotion ? nil : .spring(response: 0.34, dampingFraction: 0.86), value: model.selection)
+                .animation(reducedMotion ? nil : .interactiveSpring(response: 0.20, dampingFraction: 1, blendDuration: 0.05), value: model.carouselPosition)
         }.frame(maxHeight: 560).accessibilityElement(children: .contain).accessibilityLabel("Game carousel")
     }
 }
+enum ArtworkRole: String { case portrait, landscape, background }
 struct Artwork: View {
     @EnvironmentObject private var model: LibraryModel
     let game: Game
-    var background = false
+    var role: ArtworkRole = .portrait
+    @State private var image: NSImage?
+    private var cacheKey: String? {
+        switch role {
+        case .portrait: return game.cachedArtwork
+        case .landscape: return game.cachedLandscape ?? game.cachedArtwork
+        case .background: return game.cachedBackground ?? game.cachedLandscape ?? game.cachedArtwork
+        }
+    }
     var body: some View {
         GeometryReader { geometry in
             ZStack {
                 Palette.panel
-                if let image = cachedImage {
-                    Image(nsImage: image).resizable().scaledToFill().frame(width: geometry.size.width, height: geometry.size.height).clipped()
-                } else if game.launchKind == .application {
-                    Image(nsImage: NSWorkspace.shared.icon(forFile: game.launchTarget)).resizable().scaledToFit().padding(45).opacity(background ? 0.3 : 1)
+                if let image {
+                    if role != .background { Image(nsImage: image).resizable().scaledToFit().frame(width: geometry.size.width, height: geometry.size.height) }
+                    else { Image(nsImage: image).resizable().scaledToFill().frame(width: geometry.size.width, height: geometry.size.height).clipped() }
                 } else { Image(systemName: "gamecontroller").font(.system(size: 70, weight: .ultraLight)).foregroundStyle(.white.opacity(0.18)) }
             }
         }.clipped().accessibilityHidden(true)
-    }
-    private var cachedImage: NSImage? {
-        _ = model.cacheRevision
-        let key = background ? game.cachedBackground : game.cachedArtwork
-        if let url = model.media.file(gameID: game.id, key: key), let image = NSImage(contentsOf: url) { return image }
-        if background, let url = model.media.file(gameID: game.id, key: game.cachedArtwork) { return NSImage(contentsOf: url) }
-        return nil
+            .task(id: game.id + role.rawValue + (cacheKey ?? "")) {
+                let loaded: NSImage?
+                if let url = model.media.file(gameID: game.id, key: cacheKey) {
+                    loaded = await ImageRepository.shared.image(at: url, maximum: role == .portrait ? 960 : role == .landscape ? 960 : 1280)
+                } else if game.launchKind == .application { loaded = NSWorkspace.shared.icon(forFile: game.launchTarget) }
+                else { loaded = nil }
+                guard !Task.isCancelled else { return }; image = loaded
+            }
     }
 }
 struct CarouselCard: View {
@@ -311,7 +325,7 @@ struct CarouselCard: View {
             }.padding(24)
         }.clipShape(RoundedRectangle(cornerRadius: 18))
             .overlay(RoundedRectangle(cornerRadius: 18).stroke(selected ? Palette.accent : .white.opacity(0.15), lineWidth: selected ? 2 : 1))
-            .shadow(color: .black.opacity(0.8), radius: selected ? 28 : 14, y: 18)
+            .shadow(color: .black.opacity(0.8), radius: selected ? 12 : 5, y: 10)
     }
 }
 struct GameDetail: View {
@@ -320,7 +334,7 @@ struct GameDetail: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 19) {
-                Artwork(game: game).frame(height: 140).clipShape(RoundedRectangle(cornerRadius: 10))
+                Artwork(game: game, role: .landscape).frame(height: 140).clipShape(RoundedRectangle(cornerRadius: 10))
                 Text(game.name).font(.system(size: 27, weight: .bold, design: .rounded)).textSelection(.enabled)
                 Button { model.launch(game) } label: { Label("Play", systemImage: "play.fill").font(.headline).frame(maxWidth: .infinity).padding(12).foregroundStyle(.black).background(Palette.accent, in: RoundedRectangle(cornerRadius: 8)) }
                 Text(game.summary.isEmpty ? "Find metadata to add a description." : game.summary).font(.callout).foregroundStyle(.secondary).lineSpacing(4).textSelection(.enabled)

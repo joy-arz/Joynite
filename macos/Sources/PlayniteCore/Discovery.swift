@@ -62,10 +62,12 @@ public struct Discovery {
                 }
             } catch { result.warnings.append("Heroic \(file): \(error.localizedDescription)") }
         }
-        let roots = ["/Applications/Games", "/Applications/GOG Games", home.appendingPathComponent("Games").path, home.appendingPathComponent("GOG Games").path, home.appendingPathComponent("Library/Application Support/itch/apps").path] + folders
+        let roots = ["/Applications/Games", "/Applications/GOG Games", home.appendingPathComponent("Games").path, home.appendingPathComponent("Applications/Sikarugir").path, home.appendingPathComponent("Applications/Wineskin").path, home.appendingPathComponent("GOG Games").path, home.appendingPathComponent("Library/Application Support/itch/apps").path] + folders
         for path in Set(roots) { scanApps(URL(fileURLWithPath: path), depth: 0, all: true, into: &result) }
         scanApps(URL(fileURLWithPath: "/Applications"), depth: 0, all: false, into: &result)
         scanApps(home.appendingPathComponent("Applications"), depth: 0, all: false, into: &result)
+        let compatibility = CompatibilityDiscovery(home: home).scan(apps: result.games, folders: folders)
+        result.games += compatibility.games; result.warnings += compatibility.warnings
         var seen = Set<String>()
         result.games = result.games.filter { seen.insert($0.id).inserted }.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
         return result
@@ -100,6 +102,7 @@ public struct Discovery {
     public func steamGame(manifest: URL) throws -> Game? {
         let root = try VDF.parse(String(contentsOf: manifest, encoding: .utf8))
         guard let state = VDF.object(root, "AppState"), let id = VDF.string(state, "appid"), Int(id) != nil, let name = VDF.string(state, "name"), let directory = VDF.string(state, "installdir") else { throw LibraryError.invalid("Missing Steam installation fields.") }
+        guard !directory.contains(".."), !directory.contains("/"), !directory.contains("\\") else { throw LibraryError.invalid("Invalid Steam installation directory.") }
         let flags = Int(VDF.string(state, "StateFlags") ?? "0") ?? 0
         guard flags & 4 != 0 else { return nil }
         let path = manifest.deletingLastPathComponent().appendingPathComponent("common").appendingPathComponent(directory).path

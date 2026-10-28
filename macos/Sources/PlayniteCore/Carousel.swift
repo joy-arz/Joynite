@@ -18,8 +18,14 @@ public enum Carousel {
 public enum UninstallPlan: Equatable {
     case trashApplication(URL)
     case steam(URL)
+    case compatibility(CompatibilityLaunch)
     case manageClient(URL, String)
     public static func make(for game: Game, home: URL = FileManager.default.homeDirectoryForCurrentUser) throws -> UninstallPlan {
+        if game.launchKind == .compatibility {
+            guard var plan = game.compatibility, UInt64(game.storeID) != nil, let steam = plan.arguments.first else { throw LibraryError.invalid("Compatibility uninstall settings are missing.") }
+            plan.arguments = [steam, "steam://uninstall/\(game.storeID)"]
+            return .compatibility(plan)
+        }
         if game.launchKind == .store {
             if game.store == .steam, let id = UInt64(game.storeID), id > 0 {
                 return .steam(URL(string: "steam://uninstall/\(id)")!)

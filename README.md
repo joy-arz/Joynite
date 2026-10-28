@@ -1,10 +1,15 @@
-# macOS Tahoe edition
+# Playnite Carousel
 
-This fork adds **Playnite for Mac**, a native SwiftUI library and launcher for macOS, with automatic game metadata, installed-game discovery, and native/store-client launching.
+A redesigned, lightweight Playnite UI with a smooth game carousel, offline metadata, and keyboard/controller navigation.
 
-**[macOS installation, capabilities, and build instructions](macos/README.md)** · **[Download macOS builds](https://github.com/joy-arz/Playnite/releases)**
+- **Native macOS edition:** SwiftUI, fitted portrait cards, landscape inspection art, alternate backdrops, and bounded image reuse.
+- **Shared desktop edition:** Windows, Linux, and macOS using Rust and the system webview, with no bundled browser or Node.js runtime.
+- **Installed-library discovery:** Steam, Epic/Heroic manifests, native Mac games, and Steam inside Wine, CrossOver, and Sikarugir/Wineskin prefixes.
+- **Local-first library:** cached metadata/artwork, favorites, import/export, and safe uninstall handoffs.
 
-The Windows application and its source remain below. The Mac implementation lives in `macos/` and does not run Windows Playnite plugins or make Windows-only games native.
+**[Downloads](https://github.com/joy-arz/Playnite/releases)** · **[Native Mac guide](macos/README.md)** · **[Windows/Linux/shared desktop guide](desktop/README.md)** · **[Audit and performance notes](AUDIT.md)**
+
+This fork focuses on a better browsing UI and a smaller implementation surface. The native Mac 0.2 baseline occupied about 2 MB on disk and was sampled at about 23 MB resident while idle. Current-build measurements and cross-platform validation are recorded with their test conditions in the audit. Original Windows Playnite source and the MIT license remain below; its plugin system is not portable to these independent interfaces.
 
 ---
 
