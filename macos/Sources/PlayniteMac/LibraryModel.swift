@@ -6,6 +6,11 @@ import UniformTypeIdentifiers
 @MainActor final class LibraryModel: ObservableObject {
     @Published var library = LibraryFile()
     @Published var selection: String?
+    @Published var showLibrary = false
+    @Published var showDetails = false
+    @Published var searchRequested = 0
+    @Published var cacheRevision = 0
+    @Published var showPublisherCatalog = false
     @Published var filter = "All games"
     @Published var search = ""
     @Published var busy = false
@@ -16,11 +21,14 @@ import UniformTypeIdentifiers
     @Published var issues: [String] = []
     let metadata = MetadataClient()
     private let storage: LibraryStorage
+    let media: MediaCache
+    private var preparing = false
     private var writable = true
     var games: [Game] { library.games }
     var selected: Game? { games.first { $0.id == selection } }
     var visible: [Game] {
         games.filter { game in
+            guard game.hidden != true else { return false }
             let matches = filter == "All games" || (filter == "Favorites" && game.favorite) || (filter == "Recently played" && game.lastPlayed != nil) || filter == game.store.rawValue
             return matches && (search.isEmpty || game.name.localizedCaseInsensitiveContains(search) || game.genres.contains { $0.localizedCaseInsensitiveContains(search) })
         }.sorted { lhs, rhs in
@@ -29,11 +37,54 @@ import UniformTypeIdentifiers
         }
     }
     init() {
-        let directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("PlayniteMac")
+        let directory = ProcessInfo.processInfo.environment["PLAYNITE_DATA_DIRECTORY"].map { URL(fileURLWithPath: $0, isDirectory: true) } ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("PlayniteMac")
         storage = LibraryStorage(url: directory.appendingPathComponent("library.json"))
+        media = MediaCache(root: directory.appendingPathComponent("Media", isDirectory: true))
         do { library = try storage.load() }
         catch { writable = false; self.error = "Library could not be read. It has been preserved at \(storage.url.path). \(error.localizedDescription)" }
-        selection = games.first?.id
+        selection = visible.first?.id
+    }
+    func move(_ offset: Int) { selection = Carousel.move(selection, by: offset, in: visible) }
+    func ensureSelection() {
+        if !visible.contains(where: { $0.id == selection }) { selection = visible.first?.id }
+    }
+    func prepareOfflineLibrary() async {
+        guard !preparing, writable else { return }
+        preparing = true; defer { preparing = false }
+        await reconcileUninstalls()
+        for original in games {
+            var game = original
+            if let entry = PublisherCatalog.match(game.name), game.metadataSource.isEmpty {
+                game = entry.metadata.applying(to: game); update(game)
+            }
+            if game.backgroundArtwork == nil, game.metadataSource == "Steam", !busy,
+               let details = try? await metadata.automatic(game), let current = games.first(where: { $0.id == game.id }) {
+                game = details.applying(to: current); update(game)
+            }
+            await cacheArtwork(game)
+        }
+    }
+    func cacheArtwork(_ original: Game) async {
+        guard var game = games.first(where: { $0.id == original.id }) else { return }
+        let poster = game.artwork
+        let background = game.backgroundArtwork ?? ""
+        let oldPoster = game.cachedArtwork; let oldBackground = game.cachedBackground
+        if let portrait = MediaCache.portraitURL(for: game), let key = try? await media.cache(portrait, gameID: game.id) { game.cachedArtwork = key }
+        else if !poster.isEmpty, let key = try? await media.cache(poster, gameID: game.id) { game.cachedArtwork = key }
+        if !background.isEmpty, background != poster, let key = try? await media.cache(background, gameID: game.id) { game.cachedBackground = key }
+        if game.cachedArtwork == nil, game.launchKind == .application,
+           let data = NSWorkspace.shared.icon(forFile: game.launchTarget).tiffRepresentation,
+           let key = try? await media.store(data, gameID: game.id, key: MediaCache.identifier("local-icon:" + game.id) + ".png") { game.cachedArtwork = key }
+        guard var current = games.first(where: { $0.id == game.id }) else { try? await media.remove(gameID: game.id); return }
+        if current.artwork == poster { current.cachedArtwork = game.cachedArtwork }
+        if (current.backgroundArtwork ?? "") == background { current.cachedBackground = game.cachedBackground }
+        if oldPoster != game.cachedArtwork || oldBackground != game.cachedBackground { update(current); cacheRevision += 1 }
+    }
+    func applyMetadata(_ details: Metadata, to id: String) async {
+        guard let current = games.first(where: { $0.id == id }) else { return }
+        let updated = details.applying(to: current)
+        update(updated)
+        await cacheArtwork(updated)
     }
     func save() {
         guard writable else { error = "Library is read-only after a load failure. Restore library.json from library.json.backup in Application Support/PlayniteMac and restart."; return }
@@ -56,8 +107,8 @@ import UniformTypeIdentifiers
                 library.games.append(found); count += 1
             }
         }
-        if selection == nil { selection = games.first?.id }
-        issues = result.warnings; save()
+        ensureSelection()
+        issues = result.warnings; save(); await reconcileUninstalls()
         status = "Imported \(count) new games. Fetching missing metadata…"
         await enrich(games.filter { $0.metadataUpdated == nil })
         status = "\(games.count) games in your library. \(issues.count) notices."
@@ -68,7 +119,7 @@ import UniformTypeIdentifiers
             do {
                 status = "Finding metadata for \(game.name)…"
                 let details = try await metadata.automatic(game)
-                if let current = games.first(where: { $0.id == game.id }) { update(details.applying(to: current)) }
+                await applyMetadata(details, to: game.id)
             } catch { issues.append(error.localizedDescription) }
             try? await Task.sleep(nanoseconds: 300_000_000)
         }
@@ -82,7 +133,8 @@ import UniformTypeIdentifiers
         guard panel.runModal() == .OK else { return }
         for url in panel.urls {
             guard let game = Discovery.application(url) else { continue }
-            if !games.contains(where: { $0.id == game.id || $0.installPath == game.installPath }) { library.games.append(game) }
+            if let index = library.games.firstIndex(where: { $0.id == game.id || $0.installPath == game.installPath }) { library.games[index].hidden = false }
+            else { library.games.append(game) }
             selection = game.id
         }
         save()
@@ -117,9 +169,55 @@ import UniformTypeIdentifiers
     }
     func toggleFavorite(_ game: Game) { var game = game; game.favorite.toggle(); update(game) }
     func remove(_ game: Game) {
-        let alert = NSAlert(); alert.messageText = "Remove \(game.name) from the library?"; alert.informativeText = "The installed game and its saves will remain on disk. Scanning can import it again."; alert.addButton(withTitle: "Remove"); alert.addButton(withTitle: "Cancel")
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
-        library.games.removeAll { $0.id == game.id }; selection = visible.first?.id; save()
+        var game = game; game.hidden = true; update(game); ensureSelection()
+        status = "Hidden \(game.name). Its offline metadata is retained."
+    }
+    func restoreHidden() {
+        for index in library.games.indices { library.games[index].hidden = false }
+        save(); ensureSelection()
+    }
+    func uninstall(_ game: Game) {
+        do {
+            let plan = try UninstallPlan.make(for: game)
+            switch plan {
+            case .trashApplication(let url):
+                guard NSRunningApplication.runningApplications(withBundleIdentifier: Bundle(url: url)?.bundleIdentifier ?? "").isEmpty else { error = "Quit \(game.name) before uninstalling."; return }
+                let alert = NSAlert(); alert.messageText = "Uninstall \(game.name)?"
+                alert.informativeText = "Move \(url.path) to Trash, including any data inside the application bundle. External saves are left in place. The library entry and offline artwork are removed only after the move succeeds. You can recover the application from Trash."
+                alert.addButton(withTitle: "Move to Trash"); alert.addButton(withTitle: "Cancel")
+                guard alert.runModal() == .alertFirstButtonReturn else { return }
+                NSWorkspace.shared.recycle([url]) { _, failure in
+                    Task { @MainActor in
+                        if let failure { self.error = "Uninstall failed: \(failure.localizedDescription)"; return }
+                        guard !FileManager.default.fileExists(atPath: url.path) else { self.error = "The application is still installed. Its offline metadata has been kept."; return }
+                        await self.finishUninstall(game)
+                    }
+                }
+            case .steam(let url):
+                guard NSWorkspace.shared.urlForApplication(toOpen: url) != nil else { error = "Install Steam to use its uninstall dialog."; return }
+                if NSWorkspace.shared.open(url) {
+                    var current = game; current.pendingUninstall = true; update(current)
+                    status = "Complete uninstall in Steam. Metadata stays until removal is confirmed."
+                }
+            case .manageClient(let url, let client):
+                guard NSWorkspace.shared.urlForApplication(toOpen: url) != nil else { error = "Install \(client) to manage this installation."; return }
+                let alert = NSAlert(); alert.messageText = "Uninstall through \(client)?"
+                alert.informativeText = "Select \(game.name) in \(client) and use its Uninstall command. Playnite will keep your offline metadata until the installation has been removed."
+                alert.addButton(withTitle: "Open \(client)"); alert.addButton(withTitle: "Cancel")
+                if alert.runModal() == .alertFirstButtonReturn, NSWorkspace.shared.open(url) {
+                    var current = game; current.pendingUninstall = true; update(current)
+                    status = "Waiting for \(client) to remove \(game.name)."
+                }
+            }
+        } catch { self.error = error.localizedDescription }
+    }
+    private func finishUninstall(_ game: Game) async {
+        library.games.removeAll { $0.id == game.id }; save(); ensureSelection()
+        do { try await media.remove(gameID: game.id) } catch { issues.append("Offline artwork cleanup: \(error.localizedDescription)") }
+        cacheRevision += 1; status = "Uninstalled \(game.name)."
+    }
+    func reconcileUninstalls() async {
+        for game in games where UninstallPlan.confirmedMissing(game) { await finishUninstall(game) }
     }
     func exportLibrary() {
         let panel = NSSavePanel(); panel.nameFieldStringValue = "PlayniteMac-library.json"; panel.allowedContentTypes = [.json]
@@ -133,7 +231,8 @@ import UniformTypeIdentifiers
         do {
             let imported = try LibraryStorage(url: url).load()
             for game in imported.games where !games.contains(where: { $0.id == game.id }) { library.games.append(game) }
-            save(); selection = games.first?.id; status = "Library merged."
+            save(); selection = visible.first?.id; status = "Library merged."
+            Task { await prepareOfflineLibrary() }
         } catch { self.error = "Import failed: \(error.localizedDescription)" }
     }
 }

@@ -111,6 +111,72 @@ final class CoreTests {
         try PropertyListSerialization.data(fromPropertyList: ["CFBundleIdentifier": "io.github.joy-arz.PlayniteMac"], format: .xml, options: 0).write(to: ownApp.appendingPathComponent("Contents/Info.plist"))
         XCTAssertNil(Discovery.application(ownApp))
     }
+    func testCarouselWrapping() throws {
+        let games = (0..<5).map { Game(id: String($0), name: "Game \($0)", store: .local, launchKind: .application, launchTarget: "/Games/\($0).app") }
+        XCTAssertEqual(Carousel.move("0", by: -1, in: games), "4")
+        XCTAssertEqual(Carousel.move("4", by: 1, in: games), "0")
+        XCTAssertEqual(Carousel.move("2", by: 500, in: games), "2")
+        XCTAssertEqual(Carousel.wrappedIndex(-1001, count: 5), 4)
+        XCTAssertEqual(Carousel.slots(count: 5), [-2, -1, 0, 1, 2])
+        XCTAssertEqual(Carousel.slots(count: 1), [0])
+        var game = games[0]
+        game.storeURL = "https://store.steampowered.com/app/480/"
+        XCTAssertEqual(MediaCache.portraitURL(for: game), "https://cdn.akamai.steamstatic.com/steam/apps/480/library_600x900.jpg")
+        game.storeURL = "https://store.steampowered.com.evil.example/app/480/"
+        XCTAssertNil(MediaCache.portraitURL(for: game))
+        XCTAssertNil(Carousel.move(nil, by: 1, in: []))
+        XCTAssertNil(Carousel.wrappedIndex(0, count: 0))
+    }
+    func testLegacyLibraryMigrationAndOfflineFields() throws {
+        let game = Game(id: "legacy", name: "Legacy", store: .local, launchKind: .application, launchTarget: "/Games/Legacy.app")
+        let data = try JSONEncoder().encode(game)
+        var json = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+        for key in ["backgroundArtwork", "cachedArtwork", "cachedBackground", "hidden", "pendingUninstall"] { json.removeValue(forKey: key) }
+        let legacy = try JSONDecoder().decode(Game.self, from: JSONSerialization.data(withJSONObject: json))
+        XCTAssertEqual(legacy.id, game.id); XCTAssertNil(legacy.cachedArtwork); XCTAssertNil(legacy.hidden)
+        var updated = Metadata(summary: "Saved description", background: "https://example.com/scene.jpg").applying(to: legacy)
+        updated.cachedArtwork = MediaCache.identifier("cover") + ".png"; updated.hidden = true
+        let roundTrip = try JSONDecoder().decode(Game.self, from: JSONEncoder().encode(updated))
+        XCTAssertEqual(roundTrip.summary, "Saved description")
+        XCTAssertEqual(roundTrip.backgroundArtwork, "https://example.com/scene.jpg")
+        XCTAssertEqual(roundTrip.cachedArtwork, updated.cachedArtwork)
+        XCTAssertEqual(roundTrip.hidden, true)
+        XCTAssertEqual(Metadata(summary: "").applying(to: updated).summary, "Saved description")
+    }
+    func testPublisherMetadataWithoutNetwork() {
+        for title in ["Roblox", "Valorant", "Genshin Impact", "Honkai: Star Rail", "Zenless Zone Zero", "League of Legends", "Minecraft Launcher"] {
+            let entry = PublisherCatalog.match(title)
+            XCTAssertNotNil(entry)
+            XCTAssertFalse(entry?.metadata.summary.isEmpty ?? true)
+            XCTAssertFalse(entry?.metadata.developer.isEmpty ?? true)
+        }
+        XCTAssertNil(PublisherCatalog.match("Roblox Fake Game"))
+        XCTAssertNil(PublisherCatalog.match("Genshin Impact Soundtrack"))
+    }
+    func testUninstallPlansAndDisconnectedVolumes() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).resolvingSymlinksInPath()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let app = root.appendingPathComponent("Fixture.app")
+        try FileManager.default.createDirectory(at: app.appendingPathComponent("Contents"), withIntermediateDirectories: true)
+        try PropertyListSerialization.data(fromPropertyList: ["CFBundleIdentifier": "fixture.uninstall"], format: .xml, options: 0).write(to: app.appendingPathComponent("Contents/Info.plist"))
+        var game = Game(id: "fixture", name: "Fixture", store: .local, launchKind: .application, launchTarget: app.path, installPath: app.path)
+        if case .trashApplication(let planned) = try UninstallPlan.make(for: game) { XCTAssertEqual(planned.path, app.path) }
+        else { throw LibraryError.invalid("Expected native Trash uninstall plan.") }
+        game.installPath = root.path
+        XCTAssertThrowsError(try UninstallPlan.make(for: game))
+        var steam = Game(id: "steam:480", name: "Steam game", store: .steam, launchKind: .store, launchTarget: "steam://rungameid/480", storeID: "480")
+        try XCTAssertEqual(try UninstallPlan.make(for: steam), .steam(URL(string: "steam://uninstall/480")!))
+        steam.storeID = "480&malformed=true"
+        XCTAssertThrowsError(try UninstallPlan.make(for: steam))
+        game.installPath = root.appendingPathComponent("missing.app").path
+        XCTAssertFalse(UninstallPlan.confirmedMissing(game))
+        game.pendingUninstall = true
+        XCTAssertTrue(UninstallPlan.confirmedMissing(game))
+        game.installPath = "/Volumes/Disconnected-Validation-Disk/Games/Example.app"
+        XCTAssertFalse(UninstallPlan.confirmedMissing(game))
+        game.installPath = app.path
+        XCTAssertFalse(UninstallPlan.confirmedMissing(game))
+    }
     func testNormalizationIsConservative() {
         XCTAssertEqual(Game.normalized("Hades™"), Game.normalized("Hades"))
         XCTAssertNotEqual(Game.normalized("Hades II"), Game.normalized("Hades"))
@@ -139,6 +205,10 @@ private func XCTAssertThrowsError<T>(_ value: @autoclosure () throws -> T, line:
             ("Store HTML, entities, relative artwork, host validation", suite.testStoreHTMLAttributeOrderAndEntities),
             ("Epic launch identity, URL escaping, incomplete installs", suite.testEpicLaunchUsesCatalogIdentityAndEscapesInjection),
             ("Mac application names, missing paths, self-exclusion", suite.testApplicationNamesAndSelfExclusion),
+            ("Infinite five-card carousel and empty libraries", suite.testCarouselWrapping),
+            ("Legacy library migration and offline metadata fields", suite.testLegacyLibraryMigrationAndOfflineFields),
+            ("Publisher catalog available without network", suite.testPublisherMetadataWithoutNetwork),
+            ("Uninstall plans, cancellation retention, disconnected volumes", suite.testUninstallPlansAndDisconnectedVolumes),
             ("Conservative title normalization", suite.testNormalizationIsConservative)
         ]
         for (name, test) in tests {
@@ -146,6 +216,27 @@ private func XCTAssertThrowsError<T>(_ value: @autoclosure () throws -> T, line:
             do { try test() } catch { failures.append("\(name): \(error.localizedDescription)") }
             print("\(failures.count == before ? "PASS" : "FAIL"): \(name)")
         }
+        do {
+            let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            defer { try? FileManager.default.removeItem(at: root) }
+            let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 4, pixelsHigh: 4, bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
+            let bytes = bitmap.representation(using: .png, properties: [:])!
+            let remote = "https://offline.example.invalid/cover.png"
+            let key = MediaCache.identifier(remote) + ".png"
+            let cache = MediaCache(root: root)
+            _ = try await cache.store(bytes, gameID: "game1", key: key)
+            _ = try await cache.store(bytes, gameID: "game2", key: key)
+            XCTAssertNotNil(cache.file(gameID: "game1", key: key))
+            XCTAssertNil(cache.file(gameID: "game1", key: "../../etc/passwd"))
+            let restarted = MediaCache(root: root)
+            let offlineKey = try await restarted.cache(remote, gameID: "game1")
+            XCTAssertEqual(offlineKey, key)
+            XCTAssertNotNil(NSImage(contentsOf: try XCTUnwrap(restarted.file(gameID: "game1", key: key))))
+            try await restarted.remove(gameID: "game1")
+            XCTAssertNil(restarted.file(gameID: "game1", key: key))
+            XCTAssertNotNil(restarted.file(gameID: "game2", key: key))
+            print("PASS: artwork survives restart, works without network, isolated uninstall cleanup")
+        } catch { failures.append("Offline artwork validation: \(error.localizedDescription)") }
         if CommandLine.arguments.contains("--live") {
             let client = MetadataClient()
             do {

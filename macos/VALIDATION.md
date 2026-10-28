@@ -1,43 +1,50 @@
 # macOS validation record
 
-Date: 2026-10-28. Environment: Apple Silicon Mac, macOS Tahoe (Darwin 25.6.0), Swift 6.3.1, Command Line Tools SDK 26.4. Deployment target: macOS 14.
+## Version 0.2.0 — 2026-10-28
 
-## Automated validation
+Environment: Apple Silicon, macOS Tahoe 26.6 (Darwin 25.6.0), Swift 6.3.1, Command Line Tools SDK 26.4. Deployment target: macOS 14.
 
-Command: `swift run --package-path macos PlayniteValidation --live`
+### Automated checks
 
-Result: **47 assertions, 0 failures.**
+`swift run --package-path macos PlayniteValidation --live`: **102 assertions, 0 failures.**
 
-```
-PASS: VDF nested objects, escaped paths, malformed input
-PASS: Steam installed-state bitmask and directory checks
-PASS: Atomic persistence, backup, corrupt library handling
-PASS: Steam metadata preserves launch identity
-PASS: Store HTML, entities, relative artwork, host validation
-PASS: Epic launch identity, URL escaping, incomplete installs
-PASS: Mac application names, missing paths, self-exclusion
-PASS: Conservative title normalization
-PASS: live Steam search and app details
-PASS: live itch.io metadata
-PASS: live GOG metadata
-47 assertions. 0 failures.
-```
+`PLAYNITE_OFFLINE=1 macos/.build/debug/PlayniteValidation`: **92 assertions, 0 failures.** Network requests are explicitly disabled in this mode; existing disk-cache hits still work.
 
-Live Steam search returned the exact Hades app ID 1145360; details supplied the title, description, and artwork. itch.io Stacklands and GOG Loop Hero pages supplied non-empty descriptions and artwork. Public store responses may change independently of this release.
+Coverage:
 
-## Native application checks
+- Nested VDF, escaped paths, malformed records, Steam installation-state bitmasks, and path checks.
+- Atomic persistence, previous-save backups, corrupt-library preservation, and decoding 0.1 records without new optional fields.
+- Metadata updates preserve launch identity and non-empty fields. Cached image keys and hidden state survive serialization.
+- Steam metadata parsing, store HTML/entity parsing, HTTPS/host checks, and live Steam/GOG/itch.io responses.
+- Five carousel slots, empty/single-game libraries, negative indices, forward/backward wrap, large repeated offsets, and safe Steam portrait URLs.
+- Publisher catalog aliases and complete bundled descriptions/developers without network access.
+- Native and Steam uninstall plans, rejected mismatched paths/IDs, pending-uninstall checks, and disconnected-volume retention.
+- Image files survive a new cache instance and are retrieved with an unreachable source hostname. Invalid cache paths are rejected. Cleanup for one game leaves another game's images intact.
 
-- Built an optimized Apple Silicon executable and `.app` bundle using `scripts/build-app.sh --install`.
-- Installed into `~/Applications/Playnite for Mac.app` and opened the native window.
-- Initial scan discovered five installed games. Four received automatic metadata from exact Steam matches. One unmatched game remained available with its local icon and a notice; no incorrect metadata was assigned.
-- Detected the locally installed Sikarugir game wrapper through its Wine prefix. No runtime configuration was changed.
-- Selected Mindustry and pressed **Play**. Observed the game process and registered window. The library recorded the successful launch callback. No gameplay was exercised.
-- Selected Loop Hero and pressed **Play**. Observed its rendered **LOOP HERO 1.155 (mac)** main menu. The library recorded the successful launch callback.
-- Closed both game test launches without entering gameplay. No save slots were opened.
-- Reviewed the native library layout. Corrected Play-button contrast for inactive windows and aligned card artwork to the top of each grid row.
+### Native UI checks
 
-## Limits of this record
+- Opened the black-and-orange build with both sidebars hidden and five visible cards.
+- Verified Left/Right changes the selected game and wraps from the first entry to the final entry.
+- Verified the Shift modifier reveals the selected game's details. The automation API cannot emit a standalone modifier, so the check used Shift+F12 to exercise the Shift transition.
+- Verified existing descriptions, favorites/launch history fields, and installed entries survived upgrade. A separate pre-upgrade JSON snapshot was retained locally.
+- Steam portrait-cover URLs for the installed titles returned HTTP 200. Alternate Steam screenshots were downloaded into the persistent image cache.
 
-Steam/Epic/Heroic client launch handoffs were validated structurally, not against installed, authenticated clients on this Mac. Steam's local installation parser was exercised with controlled manifests, including combined installation-state flags. Heroic and Epic import formats need field validation on real client installations. The Sikarugir wrapper was discovered but was not launched during these checks. Intel hardware, online account-library synchronization, game installation, cloud saves, and Windows Playnite extensions are outside this release's validation.
+### Isolated offline and uninstall exercise
 
-Epic's public store page returned HTTP 403 from this network. This condition produces a metadata error with a Steam-match fallback in the interface; successful Epic page retrieval is not claimed. SteamDB is not used as an automated data source.
+A separate application bundle used `PLAYNITE_DATA_DIRECTORY` for a disposable one-game library and `PLAYNITE_OFFLINE=1` to disable network requests. Its only application was a newly created test fixture. The fixture did not contain user game data.
+
+1. Opened the isolated app and observed its saved description, cover, background, and Saved offline indicator with networking disabled.
+2. Pressed Return while details were hidden. The fixture wrote its launch marker and the library recorded the successful launch callback. No metadata panel opened.
+3. Opened Uninstall, verified the confirmation named the fixture's exact `.app` path, and cancelled. Confirmed the application, library record, and both cached image files remained.
+4. Reopened Uninstall and selected Move to Trash. Observed the empty library with the successful uninstall status. Confirmed the original application path, record, and both cached image files were gone.
+5. Closed the validation app and removed its temporary library/bundle. Removed only the temporary fixture record introduced during earlier UI setup from the real library. Real game installations and save files were not uninstalled.
+
+### Limits
+
+Physical controller hardware was not available for end-to-end testing. The build uses Apple's Game Controller connection notifications, extended-gamepad profiles, controller symbol names, directional hold-repeat, and face-button mappings. Device-specific behavior remains unverified.
+
+Steam/Epic/Heroic uninstall handoffs require an installed authenticated client. Native Trash/cancellation/cache cleanup was exercised end-to-end; client-managed uninstalls were not. Epic pages may return HTTP 403. Genshin/other publisher pages may expose no artwork; bundled descriptions and cached application icons remain available. Alternate backdrops fall back to covers where no separate image exists. No new macOS compatibility is implied for VALORANT, Genshin Impact, or another Windows-only game.
+
+## Earlier native launch baseline — version 0.1.0
+
+The original native launcher passed 47 assertions including live provider checks. Loop Hero was launched from the app into its rendered main menu on this Mac; Mindustry's process/window and launch callback were observed. Test games were closed without entering gameplay or selecting saves. The native launch path remains in use in 0.2.0, with the Return shortcut additionally exercised through the isolated fixture above.

@@ -9,6 +9,7 @@ public actor MetadataClient {
     private let session: URLSession
     public init(session: URLSession = .shared) { self.session = session }
     private func request(_ url: URL) async throws -> Data {
+        guard ProcessInfo.processInfo.environment["PLAYNITE_OFFLINE"] != "1" else { throw LibraryError.invalid("Offline mode: saved metadata remains available.") }
         guard url.scheme == "https", Self.allowedHost(url.host ?? "") else { throw LibraryError.invalid("Use an HTTPS Steam, GOG, Epic Games, or itch.io store page.") }
         var request = URLRequest(url: url, cachePolicy: .returnCacheDataElseLoad, timeoutInterval: 20)
         request.setValue("PlayniteMac/0.1 (+https://github.com/joy-arz/Playnite)", forHTTPHeaderField: "User-Agent")
@@ -20,7 +21,7 @@ public actor MetadataClient {
         return data
     }
     public static func allowedHost(_ host: String) -> Bool {
-        ["steampowered.com", "gog.com", "epicgames.com", "itch.io"].contains { host == $0 || host.hasSuffix("." + $0) }
+        ["steampowered.com", "gog.com", "epicgames.com", "itch.io", "roblox.com", "playvalorant.com", "hoyoverse.com", "leagueoflegends.com", "minecraft.net"].contains { host == $0 || host.hasSuffix("." + $0) }
     }
     public func search(_ name: String) async throws -> [SearchMatch] {
         var components = URLComponents(string: "https://store.steampowered.com/api/storesearch/")!
@@ -39,7 +40,7 @@ public actor MetadataClient {
     }
     public static func parseSteam(_ data: Data, id: String) throws -> Metadata {
         guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any], let wrapper = root[id] as? [String: Any], wrapper["success"] as? Bool == true, let item = wrapper["data"] as? [String: Any] else { throw LibraryError.invalid("Steam has no public details for app \(id).") }
-        return Metadata(name: item["name"] as? String ?? "", summary: HTML.text(item["short_description"] as? String ?? ""), developer: (item["developers"] as? [String] ?? []).joined(separator: ", "), releaseDate: (item["release_date"] as? [String: Any])?["date"] as? String ?? "", artwork: item["header_image"] as? String ?? "", url: "https://store.steampowered.com/app/\(id)/", source: "Steam", genres: (item["genres"] as? [[String: Any]] ?? []).compactMap { $0["description"] as? String })
+        return Metadata(name: item["name"] as? String ?? "", summary: HTML.text(item["short_description"] as? String ?? ""), developer: (item["developers"] as? [String] ?? []).joined(separator: ", "), releaseDate: (item["release_date"] as? [String: Any])?["date"] as? String ?? "", artwork: item["header_image"] as? String ?? "", url: "https://store.steampowered.com/app/\(id)/", source: "Steam", genres: (item["genres"] as? [[String: Any]] ?? []).compactMap { $0["description"] as? String }, background: (item["screenshots"] as? [[String: Any]])?.first?["path_full"] as? String ?? item["background_raw"] as? String ?? "")
     }
     public func page(_ value: String) async throws -> Metadata {
         guard let url = URL(string: value.trimmingCharacters(in: .whitespacesAndNewlines)), url.scheme == "https", let host = url.host, Self.allowedHost(host) else { throw LibraryError.invalid("Enter an HTTPS Steam, GOG, Epic Games, or itch.io store page.") }
@@ -49,7 +50,16 @@ public actor MetadataClient {
         guard let html = String(data: data, encoding: .utf8) else { throw LibraryError.invalid("Store page is not UTF-8.") }
         return try HTML.metadata(html, url: url)
     }
+    public func publisher(_ entry: PublisherGame) async -> Metadata {
+        var details = entry.metadata
+        if let remote = try? await page(details.url) {
+            if !remote.artwork.isEmpty { details.artwork = remote.artwork }
+            if !remote.background.isEmpty { details.background = remote.background }
+        }
+        return details
+    }
     public func automatic(_ game: Game) async throws -> Metadata {
+        if let entry = PublisherCatalog.match(game.name) { return await publisher(entry) }
         if game.store == .steam, !game.storeID.isEmpty { return try await steam(game.storeID) }
         if !game.storeURL.isEmpty { return try await page(game.storeURL) }
         let matches = try await search(game.name)
@@ -100,6 +110,6 @@ public enum HTML {
         let artwork = URL(string: image, relativeTo: url)?.absoluteURL
         let host = url.host ?? ""
         let sourceName = host.hasSuffix("itch.io") ? "itch.io" : host.hasSuffix("gog.com") ? "GOG" : host.hasSuffix("epicgames.com") ? "Epic Games" : host
-        return Metadata(name: name, summary: description, artwork: artwork?.scheme == "https" ? artwork!.absoluteString : "", url: url.absoluteString, source: sourceName)
+        return Metadata(name: name, summary: description, artwork: artwork?.scheme == "https" ? artwork!.absoluteString : "", url: url.absoluteString, source: sourceName, background: tags["twitter:image:src"] ?? "")
     }
 }

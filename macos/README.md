@@ -1,63 +1,85 @@
 # Playnite for Mac
 
-A native SwiftUI game library and launcher added to the Playnite fork. Built and tested on Apple Silicon with macOS Tahoe 26. This is an independent native implementation, not the Windows WPF application running under Wine. The original MIT-licensed Windows source remains in `source/`.
+A native SwiftUI library and launcher in this Playnite fork. The Mac application lives in `macos/`; the original MIT-licensed Windows source remains in `source/`.
 
 ## Install
 
-Download the Apple Silicon ZIP from this fork's macOS release, extract **Playnite for Mac.app**, and move it into Applications. The build is ad-hoc signed, not Apple notarized. macOS may require you to use **System Settings → Privacy & Security → Open Anyway** for a downloaded build.
+Download the Apple Silicon ZIP from [this fork's releases](https://github.com/joy-arz/Playnite/releases), unzip **Playnite for Mac.app**, and move it into Applications. Builds are ad-hoc signed, not Apple notarized. Downloaded copies may require **System Settings → Privacy & Security → Open Anyway**.
 
-On this development Mac, the app is installed at `~/Applications/Playnite for Mac.app`.
+On the development Mac, the app is installed in `~/Applications/Playnite for Mac.app`. macOS Tahoe on Apple Silicon is tested; the deployment target is macOS 14.
 
-## Use
+## The carousel
 
-- **Scan** imports installed Steam games, native Epic Launcher manifests, Heroic Epic/GOG manifests, and Mac games in standard game folders. Steam games on external disks are discovered through `libraryfolders.vdf`.
-- **Add game → Add Mac application** adds a `.app` from any disk. **Add games folder** recursively finds applications in a game directory, up to five levels deep.
-- Choose a game and press **Play**. Mac applications use `NSWorkspace.openApplication`; Steam, Epic, and Heroic use their installed client's launch protocol. Store ownership and DRM still apply.
-- Covers, descriptions, developers, genres, and release dates are fetched from Steam when available. Games are matched by Steam app ID or one exact normalized title. Ambiguous results never overwrite metadata automatically.
-- **Find metadata** lets you choose a Steam match or paste a game page from Steam, GOG, itch.io, or Epic. GOG and itch.io expose page metadata. Epic can block automated access; use the equivalent Steam title when that happens. Store pages expose different fields; missing fields are preserved.
-- Favorites, search, recent launch requests, Finder reveal, JSON export/import, and library backups are included.
+Five cards form a continuously wrapping carousel. The selected card is centered and largest, with its title and description inside. Cards further from the center become smaller. A one-game library displays one card; small multi-game libraries repeat entries to maintain the five-slot loop. Choose a card, use the arrows, swipe/drag horizontally, or scroll a trackpad horizontally.
 
-Default application search roots: `/Applications` (game category and recognized titles only), `/Applications/Games`, `/Applications/GOG Games`, `~/Applications`, `~/Games`, `~/GOG Games`, and `~/Library/Application Support/itch/apps`. Additional folders are remembered and can be removed in **Import and launch help**. An explicitly added folder is treated as a game folder, so all `.app` bundles within it are candidates.
+Steam portrait covers are preferred over wide banners. A different game screenshot supplies the backdrop when available. If a provider has no alternate image, the cover or local icon is used instead. Both sidebars start hidden; their header buttons toggle them.
 
-## What this release supports
+| Keyboard | Action |
+| --- | --- |
+| Left / Right or A / D | Previous / next game, wrapping at both ends |
+| Return | Launch selected game immediately |
+| Shift | Toggle game details |
+| L | Toggle library sidebar |
+| F | Toggle favorite |
+| Escape | Close sidebars |
+| Command-F | Focus search |
+| Command-N | Add Mac application |
+| Command-R | Scan installed games |
 
-| Integration | Installed library import | Launch | Metadata |
-| --- | --- | --- | --- |
-| Native Mac apps | App picker and game-folder scan | macOS Launch Services | Automatic exact Steam match; store-page override |
-| Steam | Local ACF/VDF manifests, external libraries | `steam://rungameid/ID` | Steam app details and search |
-| Epic | Local `.item` manifests | Epic client URL | Exact Steam match; page override subject to store access |
-| Heroic Epic / GOG | Local installed JSON manifests | `heroic://launch/RUNNER/ID` | Exact Steam match; GOG catalog fallback |
-| GOG offline Mac games | Application/folder scan | Native `.app` | Steam matching or GOG store page |
-| itch.io Mac games | Default apps folder or chosen folder | Native `.app` | Steam matching or itch.io store page |
+Navigation shortcuts pause while typing, or while a sheet/dialog is open. Return in search and metadata forms does not launch a game. Shift inside a text field retains normal typing behavior.
 
-No account credentials are requested or stored. This release imports installed games, not entire online account libraries. It does not download games, sync cloud saves, run Windows Playnite plugins/themes, or provide fullscreen/controller UI. It does not make Windows-only executables compatible with macOS. Heroic's configured compatibility runtime handles its Windows games. Local scans leave missing entries in the library so temporarily disconnected disks do not erase metadata.
+Controllers supported by Apple's extended Game Controller profile are detected at connection/disconnection. D-pad or left stick browses with hold-to-repeat; shoulders also browse. Bottom face button launches, top face button toggles details, left face button toggles libraries, and right face button closes panels. Right-stick click toggles favorite. Hints switch on actual keyboard/mouse/controller use and use the connected controller's symbol names. Input is handled only while Playnite is active, so it does not intercept game controls. Physical controller compatibility depends on macOS and the device; see validation notes.
 
-A successful store URL handoff is recorded as a **launch request**, not proof of a running game. Direct native launch errors are shown in the app. Games can still have their own OS, runtime, DRM, or hardware requirements.
+## Import and metadata
 
-## Local data
+**Add / manage → Scan installed games** discovers Steam ACF/VDF libraries, external Steam libraries, Epic `.item` manifests, Heroic Epic/GOG installed JSON, and native Mac applications. **Add Mac application** adds a game from any disk; **Add games folder** remembers a directory and scans up to five levels deep. Wine-wrapped `.app` games are detected through their prefix directories.
 
-`~/Library/Application Support/PlayniteMac/library.json` stores the library and scan folders. Atomic writes retain the previous save as `library.json.backup`. If the library cannot be decoded, the app preserves it and refuses to overwrite it. Restore the backup and restart. JSON import merges new IDs; it does not replace existing records. Export before moving the library between machines; installed paths may need re-adding.
+Standard scan roots: `/Applications` and `~/Applications` (game categories, recognized titles, and wrappers), `/Applications/Games`, `/Applications/GOG Games`, `~/Games`, `~/GOG Games`, and `~/Library/Application Support/itch/apps`. Explicit game folders treat all `.app` bundles as candidates. Hidden games can be restored from the Library menu.
 
-Online metadata requests go directly to the relevant stores. Artwork is retrieved from provider image URLs. There is no telemetry server or embedded login. SteamDB is linked only as background context; it is not scraped and does not supply an open metadata API. Public store endpoints can change or rate-limit requests. Metadata failures are listed under **notices** and do not prevent game launches.
+Steam metadata uses an app ID or one exact normalized title. Ambiguous matches are left for **Find metadata**, which can select a Steam result or import a Steam/GOG/itch.io/Epic page. GOG catalog search is a fallback. SteamDB is not scraped. Public store endpoints can change or rate-limit requests; errors never discard existing metadata or stop local game launches.
+
+A publisher catalog contains offline descriptions, developers, and genres for Roblox, VALORANT, Genshin Impact, Honkai: Star Rail, Zenless Zone Zero, League of Legends, and Minecraft. Exact aliases automatically match installed applications. **Library → Publisher metadata catalog** can apply one to the selected entry. Official publisher artwork is retrieved when exposed by the page; missing artwork falls back to the local application icon. Adding metadata does not install a game or make unsupported games run on macOS.
+
+## Offline retention
+
+Metadata lives in `~/Library/Application Support/PlayniteMac/library.json`. Covers and alternate backgrounds are downloaded, validated, resized to a maximum dimension of 1920 pixels, and saved as PNGs under `Media/<game-id-hash>/`. The library stores their cache keys. Rendering reads local files, so already cached artwork and metadata remain usable offline and across restarts. Remote failures preserve the last successful files. Existing 0.1 records migrate without losing favorites, launch history, or descriptions.
+
+**Hide from library** keeps the record and cache. Missing external disks do not trigger cleanup. An explicit refresh can update metadata; it does not erase valid fields when a response omits them. Text exported as JSON remains portable; the image cache stays on its originating Mac and can be repopulated online on a new Mac.
+
+Library saves are atomic and retain the previous version as `library.json.backup`. A corrupt library is preserved and not overwritten. Restore a backup and restart if necessary. Export a library before moving machines; launch paths may need re-adding. No credentials or telemetry server are used.
+
+## Uninstall
+
+Use **Uninstall…** in game details or the card context menu.
+
+- A native `.app` is moved to Trash after confirmation. Data inside its bundle moves with it, including saves embedded in a Wine wrapper. External save files are left alone. The library entry and image cache are removed only when the move succeeds. Restore from Trash if needed.
+- Steam opens `steam://uninstall/ID`; complete or cancel the dialog in Steam.
+- Epic/Heroic open their client; use that client's Uninstall command. These clients do not provide a common supported uninstall URL, so Playnite does not bypass their installation records.
+- For store handoffs, cached metadata stays until a return to Playnite or a scan confirms the game path is gone and its parent is accessible. Disconnected volumes never count as removal. Cancelled or failed operations keep cached metadata.
+
+Running native applications must be quit first. System apps, symlinks, nested application bundles, and Playnite itself are protected from the native Trash action.
+
+## Launch support and limits
+
+Mac applications launch with macOS Launch Services. Steam, Epic, and Heroic installations use their installed client's protocol. Store ownership and DRM still apply. A successful request is recorded as a **launch request**, not proof of reaching a main menu.
+
+This release imports installed games, not entire online account libraries. It does not download games, sync cloud saves, run Windows Playnite plugins/themes, or include a Windows compatibility runtime. Heroic uses the runtime configured there. Individual games still have their own OS, hardware, runtime, and anti-cheat requirements.
 
 ## Build and validate
 
-Requires Swift 5.9+ and Apple's macOS SDK, from Command Line Tools or Xcode. macOS 14 is the deployment target; the local release is built for Apple Silicon and verified on Tahoe. Intel builds can be produced on an Intel Mac; Intel hardware has not been tested.
+Requires Swift 5.9+ and Apple's macOS SDK from Command Line Tools or Xcode. XCTest is not required.
 
 ```sh
 cd macos
 swift run PlayniteValidation
 swift run PlayniteValidation --live
+PLAYNITE_OFFLINE=1 swift run PlayniteValidation
 ./scripts/build-app.sh --install
 open "$HOME/Applications/Playnite for Mac.app"
 ```
 
-The standalone validation executable needs no XCTest installation. It checks VDF parsing, installation state, atomic persistence/backup behavior, metadata preservation, HTML/entity parsing, host restrictions, Epic launch URLs, and title matching. `--live` also checks Steam search/details and GOG/itch.io pages. These are network integration checks and depend on store availability. A release build prints the bundled `.app` and creates a ZIP in `dist/`.
+The build script produces an optimized `.app` and a versioned ZIP in `dist/`. GitHub CI validates core behavior and packages the app. Intel builds can be produced on Intel Macs but are untested.
 
-```sh
-./dist/Playnite\ for\ Mac.app/Contents/MacOS/PlayniteMac --diagnostics
-```
+Development/validation environment variables: `PLAYNITE_DATA_DIRECTORY` selects a separate library directory; `PLAYNITE_OFFLINE=1` disables metadata and artwork network requests while allowing existing disk-cache hits. These allow isolated offline/uninstall tests without touching real libraries or games.
 
-Diagnostics print the discovered games as JSON without launching games or modifying the library. Paths and game names appear in the output; inspect before sharing.
-
-See [VALIDATION.md](VALIDATION.md) for the exact local test results and untested integrations.
+`PlayniteMac --diagnostics` prints discovered games as JSON without launching games or changing the library. Paths and game names appear in that output; inspect before sharing it. See [VALIDATION.md](VALIDATION.md) for observed checks and remaining hardware/provider limitations.

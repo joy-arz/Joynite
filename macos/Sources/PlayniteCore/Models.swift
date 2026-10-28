@@ -18,6 +18,11 @@ public struct Game: Identifiable, Codable, Equatable, Sendable {
     public var genres: [String] = []
     public var releaseDate = ""
     public var artwork = ""
+    public var backgroundArtwork: String?
+    public var cachedArtwork: String?
+    public var cachedBackground: String?
+    public var hidden: Bool?
+    public var pendingUninstall: Bool?
     public var storeURL = ""
     public var metadataSource = ""
     public var metadataUpdated: Date?
@@ -35,8 +40,9 @@ public struct Game: Identifiable, Codable, Equatable, Sendable {
 public struct Metadata: Equatable, Sendable {
     public var name: String, summary: String, developer: String, releaseDate: String, artwork: String, url: String, source: String
     public var genres: [String]
-    public init(name: String = "", summary: String = "", developer: String = "", releaseDate: String = "", artwork: String = "", url: String = "", source: String = "", genres: [String] = []) {
-        self.name = name; self.summary = summary; self.developer = developer; self.releaseDate = releaseDate; self.artwork = artwork; self.url = url; self.source = source; self.genres = genres
+    public var background: String
+    public init(name: String = "", summary: String = "", developer: String = "", releaseDate: String = "", artwork: String = "", url: String = "", source: String = "", genres: [String] = [], background: String = "") {
+        self.name = name; self.summary = summary; self.developer = developer; self.releaseDate = releaseDate; self.artwork = artwork; self.url = url; self.source = source; self.genres = genres; self.background = background
     }
     public func applying(to original: Game) -> Game {
         var game = original
@@ -44,6 +50,7 @@ public struct Metadata: Equatable, Sendable {
         if !developer.isEmpty { game.developer = developer }
         if !releaseDate.isEmpty { game.releaseDate = releaseDate }
         if !artwork.isEmpty { game.artwork = artwork }
+        if !background.isEmpty { game.backgroundArtwork = background }
         if !url.isEmpty { game.storeURL = url }
         if !genres.isEmpty { game.genres = genres }
         game.metadataSource = source; game.metadataUpdated = Date()

@@ -2,7 +2,7 @@
 set -euo pipefail
 MACOS_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$MACOS_ROOT"
-swift build -c release
+swift build -c release --product PlayniteMac
 BIN_DIR="$(swift build -c release --show-bin-path)"
 APP="$MACOS_ROOT/dist/Playnite for Mac.app"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
@@ -18,7 +18,8 @@ for size in 16 32 128 256 512; do
 done
 iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/AppIcon.icns"
 codesign --force --deep --sign - "$APP"
-ditto -c -k --sequesterRsrc --keepParent "$APP" "$MACOS_ROOT/dist/PlayniteMac-0.1.0-$(uname -m).zip"
+VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$APP/Contents/Info.plist")
+ditto -c -k --sequesterRsrc --keepParent "$APP" "$MACOS_ROOT/dist/PlayniteMac-$VERSION-$(uname -m).zip"
 printf 'Built: %s\n' "$APP"
 if [[ "${1:-}" == "--install" ]]; then
     mkdir -p "$HOME/Applications"

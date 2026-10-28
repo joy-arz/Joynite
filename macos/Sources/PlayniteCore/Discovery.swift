@@ -80,7 +80,7 @@ public struct Discovery {
                     let bundle = Bundle(url: url)
                     let category = bundle?.object(forInfoDictionaryKey: "LSApplicationCategoryType") as? String ?? ""
                     let wrapped = ["Contents/SharedSupport/prefix/drive_c", "Contents/Resources/drive_c"].contains { fm.fileExists(atPath: url.appendingPathComponent($0).path) }
-                    if all || wrapped || category.contains("games") || Self.knownGames.contains(url.deletingPathExtension().lastPathComponent.lowercased()) {
+                    if all || wrapped || category.contains("games") || (Self.knownGames.contains(url.deletingPathExtension().lastPathComponent.lowercased()) || PublisherCatalog.match(url.deletingPathExtension().lastPathComponent) != nil) {
                         let path = url.path.lowercased()
                         let store: Store = path.contains("/itch/") ? .itch : path.contains("/gog") ? .gog : .local
                         if let game = Self.application(url, store: store) { result.games.append(game) }
