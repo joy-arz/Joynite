@@ -59,7 +59,10 @@ jobs:
         run: npm run tauri -- build --bundles ${{ matrix.bundles }}
       - name: Archive macOS app
         if: runner.os == 'macOS'
-        run: ditto -c -k --sequesterRsrc --keepParent 'desktop/src-tauri/target/release/bundle/macos/Playnite Carousel.app' 'desktop/PlayniteCarousel-macOS.zip'
+        run: |
+          codesign --force --deep --sign - 'desktop/src-tauri/target/release/bundle/macos/Playnite Carousel.app'
+          codesign --verify --deep --strict 'desktop/src-tauri/target/release/bundle/macos/Playnite Carousel.app'
+          ditto -c -k --sequesterRsrc --keepParent 'desktop/src-tauri/target/release/bundle/macos/Playnite Carousel.app' 'desktop/PlayniteCarousel-macOS.zip'
       - uses: actions/upload-artifact@v4
         with:
           name: PlayniteCarousel-${{ matrix.name }}

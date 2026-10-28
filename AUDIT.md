@@ -24,6 +24,7 @@ The review covered carousel rendering, image decoding, stored library data, proc
 | Small custom uploads were enlarged to cache maxima | Wasted pixels, storage, and decoding | Downscale only; retain smaller image dimensions |
 | Provider refresh shared storage with manual edits | Custom fields could be overwritten | Store per-field overrides separately from the latest automatic baseline; independent local image overrides and reset controls |
 | Imported image dimensions were checked too late in the native cache | Oversized images could allocate before rejection | Validate dimensions and pixel count before ImageIO thumbnail decoding |
+| Shared macOS packaging inherited an incomplete resource signature | Strict verification failed on the packaged bundle | Re-sign the complete bundle ad hoc and verify it before archiving locally and in CI |
 | macOS's default focus ring was blue | Keyboard focus conflicted with the orange theme | Keep a visible custom orange indicator and disable the system effect on toolbar controls |
 
 ## Measurement conditions
