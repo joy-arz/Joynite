@@ -17,6 +17,7 @@ import UniformTypeIdentifiers
     @Published var status = "Your games. One library."
     @Published var error: String?
     @Published var showMetadata = false
+    @Published var showCustomMetadata = false
     @Published var showHelp = false
     @Published var issues: [String] = []
     let metadata = MetadataClient()
@@ -110,6 +111,23 @@ import UniformTypeIdentifiers
         update(updated)
         await cacheArtwork(updated)
     }
+    func saveCustomMetadata(id: String, changes: [String: String], resetText: Bool, images: [String: URL], resetImages: Set<String>) async throws {
+        guard writable else { throw LibraryError.invalid("The library is read-only.") }
+        guard changes.values.allSatisfy({ $0.utf8.count <= 50_000 }) else { throw LibraryError.invalid("Metadata fields must be shorter than 50,000 bytes.") }
+        if let name = changes["name"], name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { throw LibraryError.invalid("Game title cannot be empty.") }
+        var imported: [String: String] = [:]
+        for (role, url) in images { imported[role] = try await media.importImage(url, gameID: id) }
+        guard var current = games.first(where: { $0.id == id }) else { try? await media.remove(gameID: id); throw LibraryError.invalid("Game no longer exists.") }
+        current.applyCustomMetadata(changes: changes, reset: resetText)
+        if resetImages.contains("portrait") { current.customArtwork = nil }
+        if resetImages.contains("landscape") { current.customLandscape = nil }
+        if resetImages.contains("background") { current.customBackground = nil }
+        if let key = imported["portrait"] { current.customArtwork = key }
+        if let key = imported["landscape"] { current.customLandscape = key }
+        if let key = imported["background"] { current.customBackground = key }
+        current.refreshMetadataSource()
+        update(current); cacheRevision += 1; status = "Custom metadata and artwork saved offline for \(current.name)."
+    }
     func save() {
         guard writable else { error = "Library is read-only after a load failure. Restore library.json from library.json.backup in Application Support/PlayniteMac and restart."; return }
         do { try storage.save(library) } catch { self.error = "Could not save library: \(error.localizedDescription)" }
@@ -117,7 +135,7 @@ import UniformTypeIdentifiers
     func update(_ game: Game) {
         guard writable else { error = "Library is read-only. Restore its backup before making changes."; return }
         guard let i = library.games.firstIndex(where: { $0.id == game.id }) else { return }
-        library.games[i] = game; save()
+        library.games[i] = game; ensureSelection(); save()
     }
     func scan(fetchMetadata: Bool = true) async {
         guard !busy, writable else { return }

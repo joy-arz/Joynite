@@ -1,1 +1,22 @@
-{"name":"playnite-carousel","version":"0.3.0","private":true,"type":"module","scripts":{"dev":"vite --host 127.0.0.1","build":"vite build","test":"node --test tests/*.test.mjs","tauri":"tauri"},"dependencies":{"@tauri-apps/api":"^2","@tauri-apps/plugin-dialog":"^2"},"devDependencies":{"@tauri-apps/cli":"^2","vite":"^6"}}
+{
+  "name": "playnite-carousel",
+  "version": "0.3.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "vite build",
+    "test": "node --test tests/*.test.mjs",
+    "tauri": "tauri",
+    "brand": "node scripts/build-brand.mjs"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2",
+    "@tauri-apps/plugin-dialog": "^2"
+  },
+  "devDependencies": {
+    "@resvg/resvg-js": "^2.6.2",
+    "@tauri-apps/cli": "^2",
+    "vite": "^6"
+  }
+}

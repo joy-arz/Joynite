@@ -253,6 +253,73 @@ async fn import_library(state: State<'_>, path: String) -> Result<Snapshot, Stri
     store.save()?;
     Ok(store.snapshot())
 }
+#[tauri::command]
+async fn save_custom_metadata(
+    state: State<'_>,
+    id: String,
+    changes: std::collections::BTreeMap<String, String>,
+    reset_text: bool,
+    images: std::collections::BTreeMap<String, String>,
+    reset_images: Vec<String>,
+) -> Result<Snapshot, String> {
+    let state = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        if changes.values().any(|v| v.len() > 50_000) {
+            return Err("Metadata fields must be shorter than 50,000 bytes".into());
+        }
+        if changes.get("name").is_some_and(|s| s.trim().is_empty()) {
+            return Err("Game title cannot be empty".into());
+        }
+        let root = {
+            let store = state.store.lock().map_err(|e| e.to_string())?;
+            store.ensure_writable()?;
+            store.game(&id)?;
+            store.root.clone()
+        };
+        let mut imported = std::collections::BTreeMap::new();
+        for (role, path) in images {
+            if !["portrait", "landscape", "background"].contains(&role.as_str()) {
+                return Err("Unsupported image role".into());
+            }
+            imported.insert(
+                role,
+                metadata::import_image(std::path::Path::new(&path), &root, &id)?,
+            );
+        }
+        let mut store = state.store.lock().map_err(|e| e.to_string())?;
+        store.ensure_writable()?;
+        let game = store
+            .library
+            .games
+            .iter_mut()
+            .find(|g| g.id == id)
+            .ok_or("Game no longer exists")?;
+        game.apply_custom(changes, reset_text);
+        if reset_images.iter().any(|s| s == "portrait") {
+            game.custom_artwork = None
+        }
+        if reset_images.iter().any(|s| s == "landscape") {
+            game.custom_landscape = None
+        }
+        if reset_images.iter().any(|s| s == "background") {
+            game.custom_background = None
+        }
+        if let Some(key) = imported.remove("portrait") {
+            game.custom_artwork = Some(key)
+        }
+        if let Some(key) = imported.remove("landscape") {
+            game.custom_landscape = Some(key)
+        }
+        if let Some(key) = imported.remove("background") {
+            game.custom_background = Some(key)
+        }
+        game.refresh_source();
+        store.save()?;
+        Ok(store.snapshot())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
 fn main() {
     if std::env::args().any(|a| a == "--diagnostics") {
         if let Some(home) = dirs::home_dir() {
@@ -303,7 +370,8 @@ fn main() {
             uninstall_game,
             open_page,
             export_library,
-            import_library
+            import_library,
+            save_custom_metadata
         ])
         .run(tauri::generate_context!())
         .expect("Could not start Playnite Carousel");

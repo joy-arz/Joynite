@@ -26,7 +26,11 @@ pub struct AppState {
     pub cancel: AtomicBool,
 }
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Images {
+    pub portrait_fill: Option<String>,
+    pub landscape_fill: Option<String>,
+    pub background_fill: Option<String>,
     pub portrait: Option<String>,
     pub landscape: Option<String>,
     pub background: Option<String>,
@@ -120,16 +124,40 @@ impl Store {
                     metadata::cache_file(&self.root, game, key)
                         .map(|p| p.to_string_lossy().into_owned())
                 };
+                let mut images = Images {
+                    portrait_fill: None,
+                    landscape_fill: None,
+                    background_fill: None,
+                    portrait: file(&game.custom_artwork).or_else(|| file(&game.cached_artwork)),
+                    landscape: file(&game.custom_landscape)
+                        .or_else(|| file(&game.cached_landscape))
+                        .or_else(|| file(&game.custom_artwork))
+                        .or_else(|| file(&game.cached_artwork)),
+                    background: file(&game.custom_background)
+                        .or_else(|| file(&game.cached_background))
+                        .or_else(|| file(&game.custom_landscape))
+                        .or_else(|| file(&game.cached_landscape))
+                        .or_else(|| file(&game.custom_artwork))
+                        .or_else(|| file(&game.cached_artwork)),
+                };
+                images.portrait_fill = images
+                    .portrait
+                    .as_ref()
+                    .and_then(|s| metadata::image_fill(Path::new(s)))
+                    .map(|p| p.to_string_lossy().into_owned());
+                images.landscape_fill = images
+                    .landscape
+                    .as_ref()
+                    .and_then(|s| metadata::image_fill(Path::new(s)))
+                    .map(|p| p.to_string_lossy().into_owned());
+                images.background_fill = images
+                    .background
+                    .as_ref()
+                    .and_then(|s| metadata::image_fill(Path::new(s)))
+                    .map(|p| p.to_string_lossy().into_owned());
                 UiGame {
                     game: game.clone(),
-                    images: Images {
-                        portrait: file(&game.cached_artwork),
-                        landscape: file(&game.cached_landscape)
-                            .or_else(|| file(&game.cached_artwork)),
-                        background: file(&game.cached_background)
-                            .or_else(|| file(&game.cached_landscape))
-                            .or_else(|| file(&game.cached_artwork)),
-                    },
+                    images,
                 }
             })
             .collect();
@@ -332,6 +360,10 @@ fn compatibility(game: &Game, uninstall: bool, root: &Path) -> Result<(), String
             "DXVK",
             "D3DMETAL",
             "WINEDLLOVERRIDES",
+            "FONTCONFIG_PATH",
+            "FONTCONFIG_ROOT",
+            "FONT_ENCODINGS_DIRECTORY",
+            "VERSIONER_PERL_PREFER_32_BIT",
         ]
         .contains(&key.as_str())
         {

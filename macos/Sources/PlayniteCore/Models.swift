@@ -31,6 +31,11 @@ public struct Game: Identifiable, Codable, Equatable, Sendable {
     public var cachedBackground: String?
     public var cachedLandscape: String?
     public var compatibility: CompatibilityLaunch?
+    public var metadataOverrides: [String: String]?
+    public var automaticMetadata: [String: String]?
+    public var customArtwork: String?
+    public var customLandscape: String?
+    public var customBackground: String?
     public var hidden: Bool?
     public var pendingUninstall: Bool?
     public var storeURL = ""
@@ -42,6 +47,30 @@ public struct Game: Identifiable, Codable, Equatable, Sendable {
     public init(id: String, name: String, store: Store, launchKind: LaunchKind, launchTarget: String, installPath: String = "", storeID: String = "") {
         self.id = id; self.name = name; self.store = store; self.launchKind = launchKind
         self.launchTarget = launchTarget; self.installPath = installPath; self.storeID = storeID
+    }
+    public var metadataValues: [String: String] {
+        ["name": name, "summary": summary, "developer": developer, "releaseDate": releaseDate, "genres": genres.joined(separator: ", "), "source": metadataSource]
+    }
+    public mutating func applyMetadataValues(_ values: [String: String]) {
+        if let value = values["name"] { name = value }
+        if let value = values["summary"] { summary = value }
+        if let value = values["developer"] { developer = value }
+        if let value = values["releaseDate"] { releaseDate = value }
+        if let value = values["genres"] { genres = value.split(separator: ",").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty } }
+    }
+    public mutating func applyCustomMetadata(changes: [String: String], reset: Bool = false) {
+        if automaticMetadata == nil { automaticMetadata = metadataValues }
+        var overrides = reset ? [:] : metadataOverrides ?? [:]
+        for (key, value) in changes where ["name", "summary", "developer", "releaseDate", "genres"].contains(key) { overrides[key] = value }
+        metadataOverrides = overrides
+        applyMetadataValues(automaticMetadata ?? [:]); applyMetadataValues(overrides)
+        refreshMetadataSource()
+        metadataUpdated = Date()
+    }
+    public mutating func refreshMetadataSource() {
+        let base = automaticMetadata?["source"] ?? ""
+        let custom = !(metadataOverrides ?? [:]).isEmpty || customArtwork != nil || customLandscape != nil || customBackground != nil
+        metadataSource = custom ? (base.isEmpty ? "Custom" : base + " + custom") : base
     }
     public static func normalized(_ value: String) -> String {
         value.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: Locale(identifier: "en_US_POSIX")).unicodeScalars.filter { CharacterSet.alphanumerics.contains($0) }.map(String.init).joined()
@@ -56,14 +85,18 @@ public struct Metadata: Equatable, Sendable {
     }
     public func applying(to original: Game) -> Game {
         var game = original
-        if !summary.isEmpty { game.summary = summary }
-        if !developer.isEmpty { game.developer = developer }
-        if !releaseDate.isEmpty { game.releaseDate = releaseDate }
+        var automatic = game.automaticMetadata ?? game.metadataValues
+        if !summary.isEmpty { automatic["summary"] = summary }
+        if !developer.isEmpty { automatic["developer"] = developer }
+        if !releaseDate.isEmpty { automatic["releaseDate"] = releaseDate }
+        if !genres.isEmpty { automatic["genres"] = genres.joined(separator: ", ") }
+        automatic["source"] = source
+        game.automaticMetadata = automatic
+        game.applyMetadataValues(automatic); game.applyMetadataValues(game.metadataOverrides ?? [:])
         if !artwork.isEmpty { game.artwork = artwork }
         if !background.isEmpty { game.backgroundArtwork = background }
         if !url.isEmpty { game.storeURL = url }
-        if !genres.isEmpty { game.genres = genres }
-        game.metadataSource = source; game.metadataUpdated = Date()
+        game.refreshMetadataSource(); game.metadataUpdated = Date()
         return game
     }
 }

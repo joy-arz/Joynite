@@ -1,9 +1,9 @@
 name: macOS native build
 on:
   push:
-    paths: ['macos/**', '.github/workflows/macos.yml']
+    paths: ['branding/**', 'macos/**', '.github/workflows/macos.yml']
   pull_request:
-    paths: ['macos/**', '.github/workflows/macos.yml']
+    paths: ['branding/**', 'macos/**', '.github/workflows/macos.yml']
   workflow_dispatch:
 permissions:
   contents: read

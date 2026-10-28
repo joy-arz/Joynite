@@ -55,6 +55,9 @@ public actor MediaCache {
     @discardableResult public func store(_ data: Data, gameID: String, key: String, role: CachedImageRole = .any) throws -> String {
         guard key.range(of: "^[a-f0-9]{64}\\.png$", options: .regularExpression) != nil,
               let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let width = properties[kCGImagePropertyPixelWidth] as? Int, let height = properties[kCGImagePropertyPixelHeight] as? Int,
+              width > 0, height > 0, width <= 8192, height <= 8192, width * height <= 32_000_000,
               let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceThumbnailMaxPixelSize: role.maximum, kCGImageSourceCreateThumbnailWithTransform: true] as CFDictionary) else { throw LibraryError.invalid("Artwork is not a supported image.") }
         guard role.fits(width: image.width, height: image.height) else { throw LibraryError.invalid("Artwork does not fit the \(role.rawValue) aspect ratio.") }
         let output = NSMutableData()
@@ -65,6 +68,14 @@ public actor MediaCache {
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         try (output as Data).write(to: folder.appendingPathComponent(key), options: .atomic)
         return key
+    }
+    public func importImage(_ url: URL, gameID: String) throws -> String {
+        guard url.isFileURL else { throw LibraryError.invalid("Choose a local image file.") }
+        let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
+        guard size > 0, size <= 24_000_000 else { throw LibraryError.invalid("Custom images must be smaller than 24 MB.") }
+        let data = try Data(contentsOf: url)
+        let key = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined() + ".png"
+        return try store(data, gameID: gameID, key: key)
     }
     public func remove(gameID: String) throws {
         let folder = directory(for: gameID)

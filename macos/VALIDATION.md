@@ -1,5 +1,15 @@
 # macOS validation record
 
+## Version 0.3.0 — 2026-10-28
+
+Native release packaging succeeds on Apple Silicon/macOS Tahoe. Live validation passes **136 assertions, 0 failures**; forced-offline validation passes **126 assertions, 0 failures**. Additional coverage includes two independent Sikarugir Steam prefixes with the same app ID, original runtime/argument preservation, compatibility uninstall routes, Windows-path traversal rejection, three artwork aspect roles, persistent custom text/image keys, per-field override preservation across provider refresh, automatic reset, and custom image retention after deleting its source.
+
+The shared Rust backend passes 13 tests and the JavaScript navigation model passes 5 tests (20,000 positions, wrapping and stable buffered identities). The prior checkpoint produced Windows NSIS, Linux DEB/AppImage, and macOS shared-app artifacts in CI. The final release requires another successful platform build of the release commit.
+
+A disposable copy of the real six-game library runs with PLAYNITE_OFFLINE=1. Native UI checks verified the new logo, orange toolbar focus, five visible cards, uncropped foreground over softened fill, and saving a custom Roblox developer and cover from the editor. Changes are confined to /tmp validation data. No real game was uninstalled.
+
+No numeric FPS or universal performance comparison is claimed from these checks. See ../AUDIT.md for findings and remaining controller/client validation limits.
+
 ## Version 0.2.0 — 2026-10-28
 
 Environment: Apple Silicon, macOS Tahoe 26.6 (Darwin 25.6.0), Swift 6.3.1, Command Line Tools SDK 26.4. Deployment target: macOS 14.

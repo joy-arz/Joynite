@@ -12,7 +12,7 @@ On the development Mac, the app is installed in `~/Applications/Playnite for Mac
 
 Five cards form a continuously wrapping carousel. The selected card is centered and largest, with its title and description inside. Cards further from the center become smaller. A one-game library displays one card; small multi-game libraries repeat entries to maintain the five-slot loop. Choose a card, use the arrows, swipe/drag horizontally, or scroll a trackpad horizontally.
 
-Steam portrait covers are preferred over wide banners. A different game screenshot supplies the backdrop when available. If a provider has no alternate image, the cover or local icon is used instead. Both sidebars start hidden; their header buttons toggle them.
+Steam portrait covers are preferred over wide banners. Portrait covers, horizontal inspection images, and alternate backgrounds have independent offline caches. The full sharp image fits inside its frame; a softened copy fills any remaining space without cutting off the foreground. Movement uses a 0.42-second interruptible spring with four offscreen card buffers, retaining five visible cards. A different game screenshot supplies the backdrop when available. If a provider has no alternate image, the cover or local icon is used instead. Both sidebars start hidden; their header buttons toggle them.
 
 | Keyboard | Action |
 | --- | --- |
@@ -23,6 +23,7 @@ Steam portrait covers are preferred over wide banners. A different game screensh
 | F | Toggle favorite |
 | Escape | Close sidebars |
 | Command-F | Focus search |
+| Command-E | Edit custom metadata and images |
 | Command-N | Add Mac application |
 | Command-R | Scan installed games |
 
@@ -32,7 +33,7 @@ Controllers supported by Apple's extended Game Controller profile are detected a
 
 ## Import and metadata
 
-**Add / manage → Scan installed games** discovers Steam ACF/VDF libraries, external Steam libraries, Epic `.item` manifests, Heroic Epic/GOG installed JSON, and native Mac applications. **Add Mac application** adds a game from any disk; **Add games folder** remembers a directory and scans up to five levels deep. Wine-wrapped `.app` games are detected through their prefix directories.
+Every startup scans installed games. **Add / manage → Scan installed games** also discovers Steam ACF/VDF libraries, external Steam libraries, Epic `.item` manifests, Heroic Epic/GOG installed JSON, and native Mac applications. **Add Mac application** adds a game from any disk; **Add games folder** remembers a directory and scans up to five levels deep. Wine-wrapped `.app` games are detected through their prefix directories. Steam inside Wine, CrossOver, and Sikarugir/Wineskin is inventoried separately per prefix, including external Steam libraries. Launch and uninstall reuse that installation’s original Wine runtime and prefix. Kaon-style CrossOver environment settings are preserved; Sikarugir uses its bundled Wine because wrapper launchers may ignore forwarded arguments. Missing runtimes produce a notice rather than routing to another Steam client.
 
 Standard scan roots: `/Applications` and `~/Applications` (game categories, recognized titles, and wrappers), `/Applications/Games`, `/Applications/GOG Games`, `~/Games`, `~/GOG Games`, and `~/Library/Application Support/itch/apps`. Explicit game folders treat all `.app` bundles as candidates. Hidden games can be restored from the Library menu.
 
@@ -40,9 +41,15 @@ Steam metadata uses an app ID or one exact normalized title. Ambiguous matches a
 
 A publisher catalog contains offline descriptions, developers, and genres for Roblox, VALORANT, Genshin Impact, Honkai: Star Rail, Zenless Zone Zero, League of Legends, and Minecraft. Exact aliases automatically match installed applications. **Library → Publisher metadata catalog** can apply one to the selected entry. Official publisher artwork is retrieved when exposed by the page; missing artwork falls back to the local application icon. Adding metadata does not install a game or make unsupported games run on macOS.
 
+## Custom metadata and images
+
+Open game details and choose **Edit metadata and images…**, use the card context menu, or press Command-E. Edit title, developer, release date, comma-separated genres, and description. Choose separate card, inspection, and background images. PNG, JPEG, WebP, and GIF files up to 24 MB are copied into the managed cache; the source files can then be moved without breaking the library. Only the first frame of animated images is used. Oversized dimensions are rejected before decoding.
+
+Overrides are per field and survive automatic refresh. Untouched fields still receive new provider data. **Reset custom text** restores the latest cached automatic values; each **Use automatic** button resets one image role independently. Everything works offline once saved. JSON export includes the text/override records, but not image files: copy the Media directory too when moving custom artwork to another computer.
+
 ## Offline retention
 
-Metadata lives in `~/Library/Application Support/PlayniteMac/library.json`. Covers and alternate backgrounds are downloaded, validated, resized to a maximum dimension of 1920 pixels, and saved as PNGs under `Media/<game-id-hash>/`. The library stores their cache keys. Rendering reads local files, so already cached artwork and metadata remain usable offline and across restarts. Remote failures preserve the last successful files. Existing 0.1 records migrate without losing favorites, launch history, or descriptions.
+Metadata lives in `~/Library/Application Support/PlayniteMac/library.json`. Covers and alternate backgrounds are downloaded, validated, resized to a maximum dimension of 1200 pixels for portrait/inspection images and 1600 pixels for backgrounds/custom images, and saved as PNGs under `Media/<game-id-hash>/`. The library stores their cache keys. Rendering reads local files, so already cached artwork and metadata remain usable offline and across restarts. Remote failures preserve the last successful files. Existing 0.1 records migrate without losing favorites, launch history, or descriptions.
 
 **Hide from library** keeps the record and cache. Missing external disks do not trigger cleanup. An explicit refresh can update metadata; it does not erase valid fields when a response omits them. Text exported as JSON remains portable; the image cache stays on its originating Mac and can be repopulated online on a new Mac.
 

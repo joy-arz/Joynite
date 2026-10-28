@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 import PlayniteCore
+import UniformTypeIdentifiers
 
 @main enum EntryPoint {
     @MainActor static func main() {
@@ -34,6 +35,7 @@ struct PlayniteApplication: App {
                     Button("Find a game") { model.searchRequested += 1 }.keyboardShortcut("f")
                     Button("Show or hide libraries") { model.showLibrary.toggle() }.keyboardShortcut("l")
                     Button("Show or hide game details") { model.showDetails.toggle() }.keyboardShortcut("i")
+                    Button("Edit selected metadata and images…") { model.showCustomMetadata = true }.keyboardShortcut("e").disabled(model.selected == nil)
                     Button("Publisher metadata catalog") { model.showPublisherCatalog = true }
                     Button("Refresh metadata") { Task { await model.refresh() } }.disabled(model.busy)
                     Button("Restore hidden games", action: model.restoreHidden)
@@ -83,10 +85,11 @@ struct LibraryView: View {
             .animation(reducedMotion ? nil : .easeInOut(duration: 0.22), value: model.showDetails)
             .alert("Playnite", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) { Button("OK") { model.error = nil } } message: { Text(model.error ?? "") }
             .sheet(isPresented: $model.showMetadata) { if let game = model.selected { MetadataSheet(game: game).environmentObject(model) } }
+            .sheet(isPresented: $model.showCustomMetadata) { if let game = model.selected { CustomMetadataSheet(game: game).environmentObject(model) } }
             .sheet(isPresented: $model.showHelp) { HelpSheet().environmentObject(model) }
             .sheet(isPresented: $model.showPublisherCatalog) { PublisherSheet().environmentObject(model) }
             .onAppear {
-                input.acceptsInput = { !model.showMetadata && !model.showHelp && !model.showPublisherCatalog && model.error == nil }
+                input.acceptsInput = { !model.showMetadata && !model.showHelp && !model.showPublisherCatalog && !model.showCustomMetadata && model.error == nil }
                 input.perform = { action in
                     searchFocused = false
                     switch action {
@@ -103,7 +106,7 @@ struct LibraryView: View {
                 input.start(); model.ensureSelection()
             }
             .onDisappear { input.stop() }
-            .task(id: (model.selection ?? "") + (model.selected?.cachedBackground ?? "")) {
+            .task(id: (model.selection ?? "") + (model.selected?.customBackground ?? model.selected?.cachedBackground ?? "")) {
                 let game = model.selected
                 do { try await Task.sleep(nanoseconds: 80_000_000) } catch { return }
                 backdropGame = game
@@ -122,12 +125,12 @@ struct LibraryView: View {
             }
             LinearGradient(stops: [.init(color: .black.opacity(0.7), location: 0), .init(color: .black.opacity(0.3), location: 0.45), .init(color: .black.opacity(0.95), location: 1)], startPoint: .top, endPoint: .bottom)
         }.ignoresSafeArea().allowsHitTesting(false)
-            .animation(reducedMotion ? nil : .easeOut(duration: 0.16), value: backdropGame?.id)
+            .animation(reducedMotion ? nil : .easeInOut(duration: 0.32), value: backdropGame?.id)
     }
     private var header: some View {
         HStack(spacing: 18) {
             Button { model.showLibrary.toggle() } label: { Image(systemName: "sidebar.left").font(.title3).frame(width: 34, height: 34) }.focused($toolbarFocus, equals: 0).focusEffectDisabled().overlay(RoundedRectangle(cornerRadius: 6).stroke(toolbarFocus == 0 ? Palette.accent : .clear, lineWidth: 1.5)).help("Libraries (L)")
-            HStack(spacing: 8) { Image(systemName: "gamecontroller.fill").foregroundStyle(Palette.accent); Text("Playnite").font(.system(size: 24, weight: .bold, design: .rounded)) }
+            HStack(spacing: 8) { BrandMark().frame(width: 30, height: 30); Text("Playnite").font(.system(size: 24, weight: .bold, design: .rounded)) }
             Text(model.filter).font(.callout).foregroundStyle(.secondary)
             Spacer()
             if model.busy { ProgressView().controlSize(.small) }
@@ -154,7 +157,7 @@ struct LibraryView: View {
                 Rectangle().fill(Palette.accent).frame(width: 30, height: 2)
                 Text(game.genres.prefix(3).joined(separator: " • ")).font(.callout).foregroundStyle(.secondary).lineLimit(1)
                 Spacer()
-                if model.media.file(gameID: game.id, key: game.cachedArtwork) != nil { Label("Saved offline", systemImage: "internaldrive").font(.caption).foregroundStyle(.secondary) }
+                if model.media.file(gameID: game.id, key: game.customArtwork ?? game.cachedArtwork) != nil { Label("Saved offline", systemImage: "internaldrive").font(.caption).foregroundStyle(.secondary) }
             }
         }.padding(.horizontal, 40).padding(.top, 10).padding(.bottom, 22).frame(height: 55)
     }
@@ -226,7 +229,7 @@ struct CarouselView: View {
     private var displaySlots: [CarouselSlot] {
         let games = model.visible
         let center = games.firstIndex { $0.id == model.selection } ?? 0
-        return Carousel.slots(count: games.count).compactMap { offset in
+        return (games.isEmpty ? [] : games.count == 1 ? [0] : Array(-4...4)).compactMap { offset in
             guard let index = Carousel.wrappedIndex(center + offset, count: games.count) else { return nil }
             let game = games[index]
             return CarouselSlot(id: model.carouselPosition + offset, game: game, offset: offset)
@@ -241,19 +244,21 @@ struct CarouselView: View {
                         let game = slot.game
                         let offset = slot.offset
                         let distance = abs(offset)
-                        let scale = distance == 0 ? 1.0 : distance == 1 ? 0.78 : 0.59
-                        let spacing = distance == 0 ? 0 : distance == 1 ? width * 0.80 : width * 1.37
+                        let scale = distance == 0 ? 1.0 : distance == 1 ? 0.78 : distance == 2 ? 0.59 : 0.45
+                        let spacing = distance == 0 ? 0 : distance == 1 ? width * 0.80 : distance == 2 ? width * 1.37 : width * (1.85 + Double(distance - 3) * 0.45)
                         Button { model.move(offset) } label: {
                             CarouselCard(game: game, selected: offset == 0)
                                 .frame(width: width, height: max(260, height))
                         }.buttonStyle(.plain).scaleEffect(scale)
-                            .opacity(distance == 0 ? 1 : distance == 1 ? 0.83 : 0.50)
+                            .opacity(distance > 2 ? 0 : distance == 0 ? 1 : distance == 1 ? 0.83 : 0.50)
+                            .allowsHitTesting(distance <= 2).accessibilityHidden(distance > 2)
                             .offset(x: CGFloat(offset < 0 ? -1 : 1) * spacing + drag * 0.18, y: distance == 0 ? -10 : CGFloat(distance * 10))
-                            .zIndex(Double(3 - distance)).transition(.opacity)
+                            .zIndex(Double(5 - distance)).transition(.identity)
                             .accessibilityLabel("\(game.name)\(offset == 0 ? ", selected" : "")")
                             .contextMenu {
                                 Button("Play") { model.launch(game) }
                                 Button("Game details") { model.move(offset); model.showDetails = true }
+                                Button("Edit metadata and images…") { model.move(offset); model.showCustomMetadata = true }
                                 Button(game.favorite ? "Remove favorite" : "Add favorite") { model.toggleFavorite(game) }
                                 Divider()
                                 Button("Uninstall…") { model.uninstall(game) }
@@ -270,7 +275,7 @@ struct CarouselView: View {
                 .gesture(DragGesture(minimumDistance: 20).onChanged { drag = $0.translation.width }.onEnded { value in
                     if abs(value.translation.width) > 45 { model.move(value.translation.width < 0 ? 1 : -1) }; drag = 0
                 })
-                .animation(reducedMotion ? nil : .interactiveSpring(response: 0.20, dampingFraction: 1, blendDuration: 0.05), value: model.carouselPosition)
+                .animation(reducedMotion ? nil : .interactiveSpring(response: 0.42, dampingFraction: 0.92, blendDuration: 0.12), value: model.carouselPosition)
         }.frame(maxHeight: 560).accessibilityElement(children: .contain).accessibilityLabel("Game carousel")
     }
 }
@@ -280,11 +285,12 @@ struct Artwork: View {
     let game: Game
     var role: ArtworkRole = .portrait
     @State private var image: NSImage?
+    @State private var fill: NSImage?
     private var cacheKey: String? {
         switch role {
-        case .portrait: return game.cachedArtwork
-        case .landscape: return game.cachedLandscape ?? game.cachedArtwork
-        case .background: return game.cachedBackground ?? game.cachedLandscape ?? game.cachedArtwork
+        case .portrait: return game.customArtwork ?? game.cachedArtwork
+        case .landscape: return game.customLandscape ?? game.cachedLandscape ?? game.customArtwork ?? game.cachedArtwork
+        case .background: return game.customBackground ?? game.cachedBackground ?? game.customLandscape ?? game.cachedLandscape ?? game.customArtwork ?? game.cachedArtwork
         }
     }
     var body: some View {
@@ -292,18 +298,20 @@ struct Artwork: View {
             ZStack {
                 Palette.panel
                 if let image {
-                    if role != .background { Image(nsImage: image).resizable().scaledToFit().frame(width: geometry.size.width, height: geometry.size.height) }
-                    else { Image(nsImage: image).resizable().scaledToFill().frame(width: geometry.size.width, height: geometry.size.height).clipped() }
+                    if let fill { Image(nsImage: fill).resizable().scaledToFill().frame(width: geometry.size.width, height: geometry.size.height).clipped().opacity(0.7) }
+                    Image(nsImage: image).resizable().scaledToFit().frame(width: geometry.size.width, height: geometry.size.height)
                 } else { Image(systemName: "gamecontroller").font(.system(size: 70, weight: .ultraLight)).foregroundStyle(.white.opacity(0.18)) }
             }
         }.clipped().accessibilityHidden(true)
             .task(id: game.id + role.rawValue + (cacheKey ?? "")) {
                 let loaded: NSImage?
+                var loadedFill: NSImage?
                 if let url = model.media.file(gameID: game.id, key: cacheKey) {
+                    loadedFill = await ImageRepository.shared.image(at: url, maximum: 64, softened: true)
                     loaded = await ImageRepository.shared.image(at: url, maximum: role == .portrait ? 960 : role == .landscape ? 960 : 1280)
                 } else if game.launchKind == .application { loaded = NSWorkspace.shared.icon(forFile: game.launchTarget) }
                 else { loaded = nil }
-                guard !Task.isCancelled else { return }; image = loaded
+                guard !Task.isCancelled else { return }; image = loaded; fill = loadedFill
             }
     }
 }
@@ -345,6 +353,7 @@ struct GameDetail: View {
                 if game.cachedArtwork != nil { Label("Artwork saved on this Mac", systemImage: "internaldrive").font(.caption).foregroundStyle(.secondary) }
                 Divider()
                 Button(game.favorite ? "Remove from favorites" : "Add to favorites") { model.toggleFavorite(game) }
+                Button("Edit metadata and images…") { model.showCustomMetadata = true }
                 Button("Find metadata…") { model.showMetadata = true }
                 if let url = URL(string: game.storeURL), url.scheme == "https" { Link("Publisher / store page", destination: url) }
                 if !game.installPath.isEmpty { Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: game.installPath)]) } }
@@ -447,5 +456,85 @@ struct PublisherSheet: View {
             }
             HStack { Text("Descriptions are bundled. Publisher artwork is cached when available.").font(.caption).foregroundStyle(.secondary); Spacer(); Button("Done") { dismiss() }.keyboardShortcut(.cancelAction) }
         }.padding(26).frame(width: 680, height: 590).tint(Palette.accent)
+    }
+}
+
+@MainActor private enum BrandAssets {
+    static let logo: NSImage? = Bundle.main.url(forResource: "BrandMark", withExtension: "png").flatMap { NSImage(contentsOf: $0) }
+}
+struct BrandMark: View {
+    var body: some View {
+        if let image = BrandAssets.logo { Image(nsImage: image).resizable().scaledToFit().accessibilityHidden(true) }
+        else { Image(systemName: "gamecontroller.fill").foregroundStyle(Palette.accent) }
+    }
+}
+struct CustomMetadataSheet: View {
+    @EnvironmentObject private var model: LibraryModel
+    @Environment(\.dismiss) private var dismiss
+    let game: Game
+    @State private var values: [String: String] = [:]
+    @State private var baseline: [String: String] = [:]
+    @State private var resetText = false
+    @State private var replacements: [String: URL] = [:]
+    @State private var resetImages = Set<String>()
+    @State private var saving = false
+    @State private var error = ""
+    private let fields = ["name", "summary", "developer", "releaseDate", "genres"]
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Edit metadata and images").font(.title2.bold())
+            Text("Custom fields survive automatic refresh. Images are copied into this game's offline cache.").font(.callout).foregroundStyle(.secondary)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    TextField("Game title", text: binding("name"))
+                    TextField("Developer", text: binding("developer"))
+                    HStack { TextField("Release date", text: binding("releaseDate")); TextField("Genres, separated by commas", text: binding("genres")) }
+                    Text("Description").font(.headline)
+                    TextEditor(text: binding("summary")).frame(height: 105).padding(6).background(Palette.panel, in: RoundedRectangle(cornerRadius: 8))
+                    Button("Reset custom text to the last automatic values") { resetText = true; baseline = game.automaticMetadata ?? game.metadataValues; values = baseline }
+                        .font(.caption).buttonStyle(.link)
+                    Divider()
+                    ForEach([("portrait", "Card cover", "Portrait, ideally 2:3"), ("landscape", "Inspection image", "Landscape, ideally 16:9"), ("background", "Alternate background", "Landscape scene")], id: \.0) { role, title, hint in
+                        HStack(spacing: 14) {
+                            CustomImagePreview(url: preview(role)).frame(width: 60, height: 64)
+                            VStack(alignment: .leading, spacing: 4) { Text(title).font(.headline); Text(hint).font(.caption).foregroundStyle(.secondary); if let path = replacements[role] { Text(path.lastPathComponent).font(.caption).lineLimit(1) } }
+                            Spacer()
+                            Button("Choose image…") { choose(role) }
+                            Button("Use automatic") { replacements.removeValue(forKey: role); resetImages.insert(role) }.font(.caption)
+                        }.padding(.vertical, 4)
+                    }
+                    Text("PNG, JPEG, WebP, or GIF. Up to 24 MB per image. The original files remain unchanged.").font(.caption).foregroundStyle(.secondary)
+                }.textFieldStyle(.roundedBorder)
+            }
+            if !error.isEmpty { Text(error).font(.callout).foregroundStyle(Palette.accent) }
+            HStack { if saving { ProgressView().controlSize(.small) }; Spacer(); Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction).disabled(saving); Button("Save offline") { save() }.buttonStyle(.borderedProminent).keyboardShortcut(.defaultAction).disabled(saving) }
+        }.padding(26).frame(width: 740, height: 710).tint(Palette.accent)
+            .onAppear { baseline = game.metadataValues; values = baseline }
+    }
+    private func binding(_ key: String) -> Binding<String> { Binding(get: { values[key] ?? "" }, set: { values[key] = $0 }) }
+    private func choose(_ role: String) {
+        let panel = NSOpenPanel(); panel.title = "Choose \(role) image"; panel.allowedContentTypes = [.png, .jpeg, .webP, .gif]
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        replacements[role] = url; resetImages.remove(role)
+    }
+    private func preview(_ role: String) -> URL? {
+        if let replacement = replacements[role] { return replacement }
+        let automatic: String? = role == "portrait" ? game.cachedArtwork : role == "landscape" ? game.cachedLandscape : game.cachedBackground
+        let custom: String? = role == "portrait" ? game.customArtwork : role == "landscape" ? game.customLandscape : game.customBackground
+        return model.media.file(gameID: game.id, key: resetImages.contains(role) ? automatic : custom ?? automatic)
+    }
+    private func save() {
+        saving = true; error = ""
+        let changes = Dictionary(uniqueKeysWithValues: fields.compactMap { key in values[key] != baseline[key] ? (key, values[key] ?? "") : nil })
+        Task { do { try await model.saveCustomMetadata(id: game.id, changes: changes, resetText: resetText, images: replacements, resetImages: resetImages); dismiss() } catch { self.error = error.localizedDescription }; saving = false }
+    }
+}
+struct CustomImagePreview: View {
+    let url: URL?
+    @State private var image: NSImage?
+    var body: some View {
+        ZStack { Palette.panel; if let image { Image(nsImage: image).resizable().scaledToFit() } else { Image(systemName: "photo").foregroundStyle(.secondary) } }
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .task(id: url?.path) { if let url { image = await ImageRepository.shared.image(at: url, maximum: 200) } else { image = nil } }
     }
 }

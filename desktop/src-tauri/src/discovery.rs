@@ -31,7 +31,7 @@ pub fn steam_game(manifest: &Path) -> Result<Option<Game>, String> {
         .ok_or("Invalid app ID")?;
     let name = vdf::text(state, "name").ok_or("Missing game title")?;
     let install = vdf::text(state, "installdir").ok_or("Missing installation directory")?;
-    if install.contains("..") || install.contains('/') || install.contains('\\') {
+    if install == ".." || install == "." || install.contains('/') || install.contains('\\') {
         return Err("Invalid installation directory".into());
     }
     let flags = vdf::text(state, "StateFlags")
@@ -127,13 +127,16 @@ fn scan_steam(base: &Path, prefix: Option<(&Path, Option<&Path>, &str)>, out: &m
                             ])
                         }
                         if label == "CrossOver" {
-                            candidates.push(PathBuf::from("/Applications/CrossOver.app/Contents/SharedSupport/CrossOver/bin/wine"))
+                            candidates.push(PathBuf::from("/Applications/CrossOver.app/Contents/SharedSupport/CrossOver/bin/wine"));
+                            candidates.push(PathBuf::from("/opt/cxoffice/bin/wine"))
                         }
-                        candidates.extend([
-                            PathBuf::from("/opt/homebrew/bin/wine"),
-                            PathBuf::from("/usr/local/bin/wine"),
-                            PathBuf::from("/usr/bin/wine"),
-                        ]);
+                        if wrapper.is_none() && label != "CrossOver" {
+                            candidates.extend([
+                                PathBuf::from("/opt/homebrew/bin/wine"),
+                                PathBuf::from("/usr/local/bin/wine"),
+                                PathBuf::from("/usr/bin/wine"),
+                            ]);
+                        }
                         let runtime = candidates
                             .into_iter()
                             .find(|p| p.is_file())
@@ -148,6 +151,62 @@ fn scan_steam(base: &Path, prefix: Option<(&Path, Option<&Path>, &str)>, out: &m
                                     .to_string_lossy()
                                     .into(),
                             );
+                        }
+                        if let Some(app) = wrapper {
+                            environment.insert(
+                                "DYLD_FALLBACK_LIBRARY_PATH".into(),
+                                app.join("Contents/SharedSupport/wine/lib")
+                                    .to_string_lossy()
+                                    .into(),
+                            );
+                            if let Ok(info) =
+                                plist::Value::from_file(app.join("Contents/Info.plist"))
+                            {
+                                if let Some(dict) = info.as_dictionary() {
+                                    for key in [
+                                        "WINEESYNC",
+                                        "WINEMSYNC",
+                                        "WINEDEBUG",
+                                        "DXVK",
+                                        "D3DMETAL",
+                                        "WINEDLLOVERRIDES",
+                                    ] {
+                                        if let Some(value) = dict.get(key) {
+                                            if let Some(text) = value.as_string() {
+                                                environment.insert(key.into(), text.into());
+                                            } else if let Some(number) = value.as_signed_integer() {
+                                                environment.insert(key.into(), number.to_string());
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        if label == "CrossOver" && cfg!(target_os = "macos") {
+                            let x11 = PathBuf::from(
+                                "/Applications/CrossOver.app/Contents/SharedSupport/X11",
+                            );
+                            environment.insert(
+                                "DYLD_FALLBACK_LIBRARY_PATH".into(),
+                                format!(
+                                    "{}:{}/lib:/lib:/usr/lib:/usr/X11/lib",
+                                    x11.join("lib").display(),
+                                    dirs::home_dir().unwrap_or_default().display()
+                                ),
+                            );
+                            environment.insert(
+                                "FONTCONFIG_PATH".into(),
+                                x11.join("etc/fonts").to_string_lossy().into(),
+                            );
+                            environment
+                                .insert("FONTCONFIG_ROOT".into(), x11.to_string_lossy().into());
+                            environment.insert(
+                                "FONT_ENCODINGS_DIRECTORY".into(),
+                                x11.join("lib/X11/fonts/encodings/encodings.dir")
+                                    .to_string_lossy()
+                                    .into(),
+                            );
+                            environment.insert("VERSIONER_PERL_PREFER_32_BIT".into(), "yes".into());
                         }
                         game.id = format!(
                             "wine-steam:{}:{}",
@@ -327,13 +386,15 @@ pub fn scan(home: &Path, folders: &[String]) -> Scan {
         home.join("Library/Containers/com.isaacmarovitz.Whisky/Bottles"),
         home.join("Library/Containers/com.isaacmarovitz.Whisky/Data/Bottles"),
         home.join(".local/share/bottles/bottles"),
+        home.join(".cxoffice"),
     ] {
         for child in entries(&root) {
-            let label = if root.to_string_lossy().contains("CrossOver") {
-                "CrossOver"
-            } else {
-                "Wine"
-            };
+            let label =
+                if root.to_string_lossy().contains("CrossOver") || root.ends_with(".cxoffice") {
+                    "CrossOver"
+                } else {
+                    "Wine"
+                };
             prefixes.push((child, None, label.into()))
         }
     }

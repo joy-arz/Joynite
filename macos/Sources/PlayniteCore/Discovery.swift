@@ -95,14 +95,14 @@ public struct Discovery {
     public static func application(_ url: URL, store: Store = .local) -> Game? {
         guard url.isFileURL, url.pathExtension.lowercased() == "app", FileManager.default.fileExists(atPath: url.appendingPathComponent("Contents/Info.plist").path) else { return nil }
         let bundle = Bundle(url: url)
-        guard bundle?.bundleIdentifier != "io.github.joy-arz.PlayniteMac" else { return nil }
+        guard bundle?.bundleIdentifier?.lowercased().hasPrefix("io.github.joy-arz.playnite") != true else { return nil }
         let name = bundle?.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String ?? url.deletingPathExtension().lastPathComponent.replacingOccurrences(of: "_", with: " ")
         return Game(id: "app:" + url.standardizedFileURL.path, name: HTML.text(name), store: store, launchKind: .application, launchTarget: url.path, installPath: url.path)
     }
     public func steamGame(manifest: URL) throws -> Game? {
         let root = try VDF.parse(String(contentsOf: manifest, encoding: .utf8))
         guard let state = VDF.object(root, "AppState"), let id = VDF.string(state, "appid"), Int(id) != nil, let name = VDF.string(state, "name"), let directory = VDF.string(state, "installdir") else { throw LibraryError.invalid("Missing Steam installation fields.") }
-        guard !directory.contains(".."), !directory.contains("/"), !directory.contains("\\") else { throw LibraryError.invalid("Invalid Steam installation directory.") }
+        guard directory != "..", directory != ".", !directory.contains("/"), !directory.contains("\\") else { throw LibraryError.invalid("Invalid Steam installation directory.") }
         let flags = Int(VDF.string(state, "StateFlags") ?? "0") ?? 0
         guard flags & 4 != 0 else { return nil }
         let path = manifest.deletingLastPathComponent().appendingPathComponent("common").appendingPathComponent(directory).path

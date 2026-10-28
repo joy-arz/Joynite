@@ -9,12 +9,13 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN_DIR/PlayniteMac" "$APP/Contents/MacOS/PlayniteMac"
 cp "$MACOS_ROOT/Info.plist" "$APP/Contents/Info.plist"
 cp "$MACOS_ROOT/../LICENSE.md" "$APP/Contents/Resources/LICENSE.md"
+cp "$MACOS_ROOT/../branding/mark-128.png" "$APP/Contents/Resources/BrandMark.png"
 ICONSET="$MACOS_ROOT/dist/AppIcon.iconset"
 mkdir -p "$ICONSET"
 for size in 16 32 128 256 512; do
-    sips -z "$size" "$size" "$MACOS_ROOT/../media/playnite-avatar.png" --out "$ICONSET/icon_${size}x${size}.png" >/dev/null
+    sips -z "$size" "$size" "$MACOS_ROOT/../branding/app-icon.png" --out "$ICONSET/icon_${size}x${size}.png" >/dev/null
     double=$((size * 2))
-    sips -z "$double" "$double" "$MACOS_ROOT/../media/playnite-avatar.png" --out "$ICONSET/icon_${size}x${size}@2x.png" >/dev/null
+    sips -z "$double" "$double" "$MACOS_ROOT/../branding/app-icon.png" --out "$ICONSET/icon_${size}x${size}@2x.png" >/dev/null
 done
 iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/AppIcon.icns"
 codesign --force --deep --sign - "$APP"

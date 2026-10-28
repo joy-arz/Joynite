@@ -1,1 +1,0 @@
-{"main-window":{"identifier":"main-window","description":"Local library window and explicit file selection","local":true,"windows":["main"],"permissions":["core:default","dialog:allow-open","dialog:allow-save","dialog:allow-message","dialog:allow-ask"]}}

@@ -1,9 +1,9 @@
 name: Cross-platform carousel
 on:
   push:
-    paths: ['desktop/**', '.github/workflows/desktop.yml']
+    paths: ['branding/**', 'desktop/**', '.github/workflows/desktop.yml']
   pull_request:
-    paths: ['desktop/**', '.github/workflows/desktop.yml']
+    paths: ['branding/**', 'desktop/**', '.github/workflows/desktop.yml']
   workflow_dispatch:
 permissions:
   contents: read

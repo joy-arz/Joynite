@@ -45,3 +45,11 @@ The shared edition stores data in the OS application-data directory under `Playn
 Development variables: `PLAYNITE_DATA_DIRECTORY` isolates a library, and `PLAYNITE_OFFLINE=1` disables network requests while allowing cache hits. `playnite-carousel --diagnostics` prints discovered installations without launching games. Inspect paths/game names before sharing diagnostic output.
 
 See [the audit](../AUDIT.md) and [validation record](../macos/VALIDATION.md) for measurements, completed fixes, and platform/hardware limits. A universal lower-memory claim against upstream requires a like-for-like benchmark; the lightweight design claims refer to the implementation and measured artifacts.
+
+## Custom metadata and artwork
+
+From game details choose **Edit metadata and images…**, or use Add / manage → Edit selected metadata / images. Title, developer, release date, genres, and description are independent local overrides. Choose a portrait card cover, horizontal inspection image, and alternate background. PNG, JPEG, WebP, and GIF uploads up to 24 MB are copied into the offline cache. Files above 8192 pixels per dimension or the decode allocation limit are rejected. Animated files use their first frame. Automatic refresh preserves overrides; restore automatic text or reset each image separately from the editor. Export includes metadata and override keys; copy Media too when transferring custom images.
+
+Nine card nodes retain five visible cards plus offscreen buffers. A 380 ms transform transition can be interrupted by further input without queuing old moves. Full foreground images fit their frames; a cached 64-pixel softened copy fills unused space. No live full-resolution blur runs during movement. Reduced-motion preferences disable transitions.
+
+The orange/yellow logo derives from the supplied vector geometry. Rebuild shared assets with `npm run brand`; icons are stored in src-tauri/icons. The application uses the installed system webview and does not bundle a browser or Node runtime.

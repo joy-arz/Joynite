@@ -42,15 +42,26 @@ pub struct Details {
 }
 impl Details {
     pub fn apply(&self, game: &mut Game) {
+        let mut automatic = game
+            .automatic_metadata
+            .clone()
+            .unwrap_or_else(|| game.metadata_values());
         if !self.summary.is_empty() {
-            game.summary = self.summary.clone()
+            automatic.insert("summary".into(), self.summary.clone());
         }
         if !self.developer.is_empty() {
-            game.developer = self.developer.clone()
+            automatic.insert("developer".into(), self.developer.clone());
         }
         if !self.release_date.is_empty() {
-            game.release_date = self.release_date.clone()
+            automatic.insert("releaseDate".into(), self.release_date.clone());
         }
+        if !self.genres.is_empty() {
+            automatic.insert("genres".into(), self.genres.join(", "));
+        }
+        automatic.insert("source".into(), self.source.clone());
+        game.apply_values(&automatic);
+        game.apply_values(&game.metadata_overrides.clone().unwrap_or_default());
+        game.automatic_metadata = Some(automatic);
         if !self.artwork.is_empty() {
             game.artwork = self.artwork.clone()
         }
@@ -60,10 +71,7 @@ impl Details {
         if !self.url.is_empty() {
             game.store_url = self.url.clone()
         }
-        if !self.genres.is_empty() {
-            game.genres = self.genres.clone()
-        }
-        game.metadata_source = self.source.clone();
+        game.refresh_source();
         game.metadata_updated = Some(now());
     }
 }
@@ -277,7 +285,7 @@ impl Client {
         fs::create_dir_all(&folder).map_err(|e| e.to_string())?;
         let temporary = folder.join(format!("{key}.tmp"));
         image
-            .thumbnail(size, size)
+            .thumbnail(size.min(image.width()), size.min(image.height()))
             .save_with_format(&temporary, image::ImageFormat::Png)
             .map_err(|e| e.to_string())?;
         fs::rename(temporary, path).map_err(|e| e.to_string())?;
@@ -337,6 +345,33 @@ impl Client {
             }
         }
     }
+}
+pub fn import_image(path: &Path, root: &Path, game_id: &str) -> Result<String, String> {
+    let size = fs::metadata(path).map_err(|e| e.to_string())?.len();
+    if size == 0 || size > 24_000_000 {
+        return Err("Choose an image smaller than 24 MB".into());
+    }
+    let bytes = fs::read(path).map_err(|e| e.to_string())?;
+    let mut reader = image::ImageReader::new(Cursor::new(&bytes))
+        .with_guessed_format()
+        .map_err(|e| e.to_string())?;
+    let mut limits = image::Limits::default();
+    limits.max_image_width = Some(8192);
+    limits.max_image_height = Some(8192);
+    limits.max_alloc = Some(128 * 1024 * 1024);
+    reader.limits(limits);
+    let image = reader.decode().map_err(|e| e.to_string())?;
+    use sha2::{Digest, Sha256};
+    let key = format!("{:x}.png", Sha256::digest(&bytes));
+    let folder = root.join("Media").join(hash(game_id));
+    fs::create_dir_all(&folder).map_err(|e| e.to_string())?;
+    let temporary = folder.join(format!("{key}.tmp"));
+    image
+        .thumbnail(1600.min(image.width()), 1600.min(image.height()))
+        .save_with_format(&temporary, image::ImageFormat::Png)
+        .map_err(|e| e.to_string())?;
+    fs::rename(temporary, folder.join(&key)).map_err(|e| e.to_string())?;
+    Ok(key)
 }
 pub fn aspect_fits(w: u32, h: u32, role: &str) -> bool {
     if w < 1 || h < 1 {
@@ -479,6 +514,72 @@ pub fn parse_html(html: &str, url: &str) -> Result<Details, String> {
 mod tests {
     use super::*;
     #[test]
+    fn custom_metadata_survives_refresh_reset_and_serialization() {
+        let mut game = Game {
+            name: "Original".into(),
+            launch_target: "/game".into(),
+            ..Default::default()
+        };
+        Details {
+            summary: "Automatic".into(),
+            developer: "Studio".into(),
+            source: "Steam".into(),
+            ..Default::default()
+        }
+        .apply(&mut game);
+        game.apply_custom(
+            std::collections::BTreeMap::from([
+                ("name".into(), "Custom".into()),
+                ("summary".into(), "".into()),
+                ("launchTarget".into(), "/bad".into()),
+            ]),
+            false,
+        );
+        game.custom_artwork = Some("custom.png".into());
+        Details {
+            summary: "Updated".into(),
+            developer: "New studio".into(),
+            source: "GOG".into(),
+            ..Default::default()
+        }
+        .apply(&mut game);
+        assert_eq!(game.name, "Custom");
+        assert_eq!(game.summary, "");
+        assert_eq!(game.developer, "New studio");
+        assert_eq!(game.launch_target, "/game");
+        let mut restored: Game =
+            serde_json::from_slice(&serde_json::to_vec(&game).unwrap()).unwrap();
+        assert_eq!(restored.metadata_source, "GOG + custom");
+        restored.apply_custom(Default::default(), true);
+        assert_eq!(restored.name, "Original");
+        assert_eq!(restored.summary, "Updated");
+        assert!(restored.custom_artwork.is_some());
+        restored.custom_artwork = None;
+        restored.refresh_source();
+        assert_eq!(restored.metadata_source, "GOG");
+    }
+    #[test]
+    fn custom_images_are_copied_and_soft_fill_is_cached() {
+        let temp = tempfile::tempdir().unwrap();
+        let original = temp.path().join("original.png");
+        image::RgbaImage::from_pixel(120, 40, image::Rgba([255, 100, 0, 255]))
+            .save(&original)
+            .unwrap();
+        let key = import_image(&original, temp.path(), "fixture").unwrap();
+        std::fs::remove_file(original).unwrap();
+        let game = Game {
+            id: "fixture".into(),
+            ..Default::default()
+        };
+        let copied = cache_file(temp.path(), &game, &Some(key)).unwrap();
+        assert_eq!(image::image_dimensions(&copied).unwrap(), (120, 40));
+        let fill = image_fill(&copied).unwrap();
+        assert!(fill.is_file());
+        let dimensions = image::image_dimensions(&fill).unwrap();
+        assert!(dimensions.0 <= 64 && dimensions.1 <= 64);
+        assert_eq!(image_fill(&copied).unwrap(), fill);
+    }
+    #[test]
     fn three_aspect_roles() {
         assert!(aspect_fits(600, 900, "portrait"));
         assert!(!aspect_fits(1920, 1080, "portrait"));
@@ -514,4 +615,15 @@ mod tests {
         assert_eq!(m.name, "A & B");
         assert_eq!(m.artwork, "https://dev.itch.io/cover.jpg");
     }
+}
+
+pub fn image_fill(path: &Path) -> Option<std::path::PathBuf> {
+    let target = path.with_file_name(format!("{}.fill.png", path.file_stem()?.to_str()?));
+    if target.is_file() {
+        return Some(target);
+    }
+    let source = image::open(path).ok()?.thumbnail(64, 64).to_rgba8();
+    let softened = image::imageops::blur(&source, 5.0);
+    softened.save(&target).ok()?;
+    Some(target)
 }

@@ -1,3 +1,16 @@
+## Playnite Carousel 0.3.0
+
+- Longer interruptible sliding, stable positional identities, nine buffered cards with five visible, off-thread image decoding, and a bounded native image cache. Rapid input retargets current motion instead of queuing animations.
+- Separate portrait, inspection, and alternate backdrop caches. Complete foreground artwork stays visible over a softened fill, including wide Roblox artwork. Small uploads are not enlarged during caching.
+- Custom metadata and all three image roles can be edited offline. Per-field overrides survive provider refresh; reset restores the latest automatic data. Imported files are copied into the managed cache.
+- New application icon and header mark preserve the supplied vector geometry with a contrasting yellow/orange gradient on charcoal.
+- Steam inside Wine, CrossOver, and Sikarugir/Wineskin keeps prefix-specific runtime/arguments for launch and uninstall. CrossOver environment and Sikarugir runtime detection follow their respective installation layout; no client settings are rewritten.
+- Startup discovery now runs for existing libraries too. Command-R remains available for manual scans. Toolbar focus uses orange instead of the native blue ring.
+- A separate Rust/system-webview edition supports Windows, Linux, and macOS. The native SwiftUI edition remains available for Mac. Existing libraries retain cached metadata, favorites, and launch history.
+- Audit fixes include stale snapshot rejection, process reaping, read-only guards, drag-click suppression, bounded image decoding, and fewer redundant writes. See AUDIT.md for measurements and validation limits.
+
+Apple Silicon native builds are ad-hoc signed, not notarized. Platform builds and fixture tests do not establish game/anti-cheat compatibility or physical controller support for every device.
+
 ## Playnite for Mac 0.2.0
 
 A black-and-orange, controller-ready carousel with persistent offline metadata.

@@ -48,7 +48,16 @@ public struct CompatibilityDiscovery {
                             game.launchKind = .compatibility
                             game.launchTarget = exe.path
                             var environment = ["WINEPREFIX": prefix.path]
-                            if label == "CrossOver" { environment["CX_BOTTLE"] = prefix.lastPathComponent }
+                            if label == "CrossOver" {
+                                environment["CX_BOTTLE"] = prefix.lastPathComponent
+                                let x11 = URL(fileURLWithPath: "/Applications/CrossOver.app/Contents/SharedSupport/X11")
+                                environment["DYLD_FALLBACK_LIBRARY_PATH"] = x11.appendingPathComponent("lib").path + ":" + home.appendingPathComponent("lib").path + ":/lib:/usr/lib:/usr/X11/lib"
+                                environment["FONTCONFIG_PATH"] = x11.appendingPathComponent("etc/fonts").path
+                                environment["FONTCONFIG_ROOT"] = x11.path
+                                environment["FONT_ENCODINGS_DIRECTORY"] = x11.appendingPathComponent("lib/X11/fonts/encodings/encodings.dir").path
+                                environment["VERSIONER_PERL_PREFER_32_BIT"] = "yes"
+                                if let display = UserDefaults(suiteName: "com.codeweavers.CrossOver")?.object(forKey: "Display") { environment["DISPLAY"] = ":\(display)" }
+                            }
                             if let wrapper {
                                 let support = wrapper.appendingPathComponent("Contents/SharedSupport")
                                 environment["DYLD_FALLBACK_LIBRARY_PATH"] = support.appendingPathComponent("wine/lib").path
@@ -72,7 +81,7 @@ public struct CompatibilityDiscovery {
         var paths: [String] = []
         if let wrapper { paths += ["Contents/SharedSupport/wine/bin/wine", "Contents/Frameworks/wswine.bundle/bin/wine64", "Contents/Resources/wine/bin/wine"].map { wrapper.appendingPathComponent($0).path } }
         if label == "CrossOver" { paths += ["/Applications/CrossOver.app/Contents/SharedSupport/CrossOver/bin/wine", home.appendingPathComponent("Applications/CrossOver.app/Contents/SharedSupport/CrossOver/bin/wine").path] }
-        paths += ["/opt/homebrew/bin/wine", "/usr/local/bin/wine", "/usr/bin/wine"]
+        if wrapper == nil && label != "CrossOver" { paths += ["/opt/homebrew/bin/wine", "/usr/local/bin/wine", "/usr/bin/wine"] }
         return paths.first { fm.isExecutableFile(atPath: $0) }
     }
     public static func resolveWindowsPath(_ path: String, prefix: URL) -> URL? {

@@ -68,6 +68,24 @@ final class CoreTests {
         XCTAssertNotNil(updated.metadataUpdated)
         XCTAssertThrowsError(try MetadataClient.parseSteam(Data(#"{"480":{"success":false}}"#.utf8), id: "480"))
     }
+    func testCustomMetadataSurvivesRefreshAndReset() throws {
+        var game = Game(id: "custom", name: "Original", store: .local, launchKind: .application, launchTarget: "/Games/Original.app")
+        game = Metadata(summary: "Automatic", developer: "Studio", source: "Steam").applying(to: game)
+        game.applyCustomMetadata(changes: ["name": "My title", "summary": "", "genres": "Action, Puzzle", "launchTarget": "/bad"])
+        XCTAssertEqual(game.name, "My title"); XCTAssertEqual(game.summary, "")
+        XCTAssertEqual(game.genres, ["Action", "Puzzle"]); XCTAssertEqual(game.launchTarget, "/Games/Original.app")
+        game.customArtwork = MediaCache.identifier("custom") + ".png"
+        game = Metadata(summary: "Updated automatic", developer: "New studio", source: "GOG").applying(to: game)
+        XCTAssertEqual(game.name, "My title"); XCTAssertEqual(game.summary, "")
+        XCTAssertEqual(game.developer, "New studio"); XCTAssertEqual(game.metadataSource, "GOG + custom")
+        let decoded = try JSONDecoder().decode(Game.self, from: JSONEncoder().encode(game))
+        XCTAssertEqual(decoded, game)
+        game.applyCustomMetadata(changes: [:], reset: true)
+        XCTAssertEqual(game.name, "Original"); XCTAssertEqual(game.summary, "Updated automatic")
+        XCTAssertNotNil(game.customArtwork)
+        game.customArtwork = nil; game.refreshMetadataSource()
+        XCTAssertEqual(game.metadataSource, "GOG")
+    }
     func testStoreHTMLAttributeOrderAndEntities() throws {
         let html = #"""
         <meta content="Game &amp; Friends" property="og:title">
@@ -177,6 +195,46 @@ final class CoreTests {
         game.installPath = app.path
         XCTAssertFalse(UninstallPlan.confirmedMissing(game))
     }
+    func testCompatibilitySteamRoutesAndArtworkRoles() throws {
+        let home = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: home) }
+        for name in ["First", "Second"] {
+            let wrapper = home.appendingPathComponent("Applications/Sikarugir/\(name).app")
+            let prefix = wrapper.appendingPathComponent("Contents/SharedSupport/prefix")
+            let steam = prefix.appendingPathComponent("drive_c/Program Files (x86)/Steam")
+            let runtime = wrapper.appendingPathComponent("Contents/SharedSupport/wine/bin/wine")
+            try FileManager.default.createDirectory(at: steam.appendingPathComponent("steamapps/common/Prefix Game"), withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(at: runtime.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try Data("fixture".utf8).write(to: steam.appendingPathComponent("steam.exe"))
+            try Data("#!/bin/sh\nexit 0\n".utf8).write(to: runtime)
+            try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: runtime.path)
+            try PropertyListSerialization.data(fromPropertyList: ["CFBundleIdentifier": "fixture.\(name)", "CFBundleName": name], format: .xml, options: 0).write(to: wrapper.appendingPathComponent("Contents/Info.plist"))
+            try #"""
+            "AppState" { "appid" "480" "name" "Prefix Game" "installdir" "Prefix Game" "StateFlags" "4" }
+            """#.write(to: steam.appendingPathComponent("steamapps/appmanifest_480.acf"), atomically: true, encoding: .utf8)
+        }
+        let games = Discovery(home: home).scan(folders: []).games.filter { $0.name == "Prefix Game" }
+        XCTAssertEqual(games.count, 2)
+        XCTAssertEqual(Set(games.map(\.id)).count, 2)
+        for game in games {
+            XCTAssertEqual(game.launchKind, .compatibility)
+            let plan = try XCTUnwrap(game.compatibility)
+            XCTAssertTrue(plan.executable.hasSuffix("Contents/SharedSupport/wine/bin/wine"))
+            XCTAssertEqual(Array(plan.arguments.suffix(2)), ["-applaunch", "480"])
+            XCTAssertTrue(plan.environment["WINEPREFIX"]?.contains(".app/Contents/SharedSupport/prefix") == true)
+            let encoded = try JSONEncoder().encode(game)
+            let decoded = try JSONDecoder().decode(Game.self, from: encoded)
+            XCTAssertEqual(decoded.compatibility, game.compatibility)
+            if case .compatibility(let uninstall) = try UninstallPlan.make(for: game) { XCTAssertEqual(uninstall.arguments.last, "steam://uninstall/480") }
+            else { throw LibraryError.invalid("Expected prefix-specific uninstall plan.") }
+        }
+        XCTAssertEqual(CompatibilityDiscovery.resolveWindowsPath("C:\\Games\\Steam", prefix: home)?.path, home.appendingPathComponent("drive_c/Games/Steam").path)
+        XCTAssertNil(CompatibilityDiscovery.resolveWindowsPath("C:\\..\\Users", prefix: home))
+        XCTAssertTrue(CachedImageRole.portrait.fits(width: 600, height: 900))
+        XCTAssertFalse(CachedImageRole.portrait.fits(width: 1920, height: 1080))
+        XCTAssertTrue(CachedImageRole.landscape.fits(width: 460, height: 215))
+        XCTAssertFalse(CachedImageRole.landscape.fits(width: 600, height: 900))
+    }
     func testNormalizationIsConservative() {
         XCTAssertEqual(Game.normalized("Hades™"), Game.normalized("Hades"))
         XCTAssertNotEqual(Game.normalized("Hades II"), Game.normalized("Hades"))
@@ -202,6 +260,7 @@ private func XCTAssertThrowsError<T>(_ value: @autoclosure () throws -> T, line:
             ("Steam installed-state bitmask and directory checks", suite.testSteamDiscoveryChecksInstalledBitAndDirectory),
             ("Atomic persistence, backup, corrupt library handling", suite.testPersistenceRoundTripAndBackup),
             ("Steam metadata preserves launch identity", suite.testSteamMetadataDoesNotAlterLaunchOrFavorite),
+            ("Custom overrides, refresh, serialization, automatic reset", suite.testCustomMetadataSurvivesRefreshAndReset),
             ("Store HTML, entities, relative artwork, host validation", suite.testStoreHTMLAttributeOrderAndEntities),
             ("Epic launch identity, URL escaping, incomplete installs", suite.testEpicLaunchUsesCatalogIdentityAndEscapesInjection),
             ("Mac application names, missing paths, self-exclusion", suite.testApplicationNamesAndSelfExclusion),
@@ -209,6 +268,7 @@ private func XCTAssertThrowsError<T>(_ value: @autoclosure () throws -> T, line:
             ("Legacy library migration and offline metadata fields", suite.testLegacyLibraryMigrationAndOfflineFields),
             ("Publisher catalog available without network", suite.testPublisherMetadataWithoutNetwork),
             ("Uninstall plans, cancellation retention, disconnected volumes", suite.testUninstallPlansAndDisconnectedVolumes),
+            ("Prefix-specific Wine Steam routes and three artwork roles", suite.testCompatibilitySteamRoutesAndArtworkRoles),
             ("Conservative title normalization", suite.testNormalizationIsConservative)
         ]
         for (name, test) in tests {
@@ -228,6 +288,11 @@ private func XCTAssertThrowsError<T>(_ value: @autoclosure () throws -> T, line:
             _ = try await cache.store(bytes, gameID: "game2", key: key)
             XCTAssertNotNil(cache.file(gameID: "game1", key: key))
             XCTAssertNil(cache.file(gameID: "game1", key: "../../etc/passwd"))
+            let customURL = root.appendingPathComponent("original-custom.png")
+            try bytes.write(to: customURL)
+            let imported = try await cache.importImage(customURL, gameID: "game2")
+            try FileManager.default.removeItem(at: customURL)
+            XCTAssertNotNil(cache.file(gameID: "game2", key: imported))
             let restarted = MediaCache(root: root)
             let offlineKey = try await restarted.cache(remote, gameID: "game1")
             XCTAssertEqual(offlineKey, key)

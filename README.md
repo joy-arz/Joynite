@@ -1,11 +1,12 @@
-# Playnite Carousel
+# <img src="branding/preview.png" width="48" alt=""> Playnite Carousel
 
 A redesigned, lightweight Playnite UI with a smooth game carousel, offline metadata, and keyboard/controller navigation.
 
 - **Native macOS edition:** SwiftUI, fitted portrait cards, landscape inspection art, alternate backdrops, and bounded image reuse.
 - **Shared desktop edition:** Windows, Linux, and macOS using Rust and the system webview, with no bundled browser or Node.js runtime.
 - **Installed-library discovery:** Steam, Epic/Heroic manifests, native Mac games, and Steam inside Wine, CrossOver, and Sikarugir/Wineskin prefixes.
-- **Local-first library:** cached metadata/artwork, favorites, import/export, and safe uninstall handoffs.
+- **Local-first library:** cached metadata/artwork, custom text and three image overrides, favorites, import/export, and safe uninstall handoffs.
+- **Smooth navigation:** interruptible sliding with offscreen card buffers. Full artwork stays visible over a cached softened fill when aspect ratios differ.
 
 **[Downloads](https://github.com/joy-arz/Playnite/releases)** · **[Native Mac guide](macos/README.md)** · **[Windows/Linux/shared desktop guide](desktop/README.md)** · **[Audit and performance notes](AUDIT.md)**
 
