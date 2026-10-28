@@ -6,7 +6,7 @@ Native release packaging succeeds on Apple Silicon/macOS Tahoe. Live validation 
 
 The shared Rust backend passes 13 tests and the JavaScript navigation model passes 5 tests (20,000 positions, wrapping and stable buffered identities). The prior checkpoint produced Windows NSIS, Linux DEB/AppImage, and macOS shared-app artifacts in CI. The final release requires another successful platform build of the release commit.
 
-A disposable copy of the real six-game library runs with PLAYNITE_OFFLINE=1. Native UI checks verified the new logo, orange toolbar focus, five visible cards, uncropped foreground over softened fill, and saving a custom Roblox developer and cover from the editor. Changes are confined to /tmp validation data. No real game was uninstalled.
+A disposable copy of the real six-game library runs with PLAYNITE_OFFLINE=1. Native UI checks verified the new logo, orange toolbar focus, five visible cards, uncropped foreground over softened fill, and saving a custom Roblox developer and cover from the editor. The custom Roblox developer and image survived an offline restart. Reset custom text and Use automatic restored the cached publisher data. Shared UI checks verified a saved developer override and twelve rapid Right-arrow presses wrapping to the same selected index. Changes are confined to /tmp validation data. No real game was uninstalled.
 
 No numeric FPS or universal performance comparison is claimed from these checks. See ../AUDIT.md for findings and remaining controller/client validation limits.
 

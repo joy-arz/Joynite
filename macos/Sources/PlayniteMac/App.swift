@@ -106,7 +106,7 @@ struct LibraryView: View {
                 input.start(); model.ensureSelection()
             }
             .onDisappear { input.stop() }
-            .task(id: (model.selection ?? "") + (model.selected?.customBackground ?? model.selected?.cachedBackground ?? "")) {
+            .task(id: model.selected) {
                 let game = model.selected
                 do { try await Task.sleep(nanoseconds: 80_000_000) } catch { return }
                 backdropGame = game

@@ -36,6 +36,8 @@ The native decoder cache is capped at 32 MB of estimated decoded pixel cost, wit
 
 A fair performance comparison with upstream Windows Playnite requires the same OS/hardware, library, artwork, plugins, and workload. This repository does not equate installer size, a single RSS sample, or a synthetic navigation test with that benchmark.
 
+Native 0.3 local bundle: 2,784 KiB allocated disk usage; shared macOS 0.3 bundle: 6,348 KiB. A native 0.3 process with six cached games and repeated navigation was sampled at 44,528 KiB RSS and 0.0% CPU after settling. This includes the new retained cards and fitted/softened artwork and is not a peak measurement.
+
 ## Remaining validation limits
 
 Physical controller hardware and authenticated Windows/Wine/CrossOver/Sikarugir clients require device/client testing. Prefix discovery and launch arguments can be validated with fixtures; game runtime compatibility and anti-cheat behavior cannot be inferred from those fixtures. Windows/Linux compilation and installer production are verified separately from actual game launches. The shared desktop UI is intentionally independent of the Windows WPF plugin and theme system.
