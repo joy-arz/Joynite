@@ -1122,15 +1122,10 @@ fn launch_action(
 fn launch_desktop(path: &Path, root: &Path, id: &str) -> Result<(), String> {
     #[cfg(target_os = "linux")]
     {
-        let output = Command::new("gio").arg("launch").arg(path).stdin(Stdio::null()).output().map_err(|e| format!("Cannot open the desktop entry with GIO: {e}. Install GIO utilities or choose the game executable."))?;
-        if !output.status.success() {
-            return Err(format!(
-                "Desktop launch failed: {}",
-                String::from_utf8_lossy(&output.stderr)
-                    .chars()
-                    .take(2000)
-                    .collect::<String>()
-            ));
+        // Do not capture inherited pipes: a game can keep them open after GIO exits.
+        let status = Command::new("gio").arg("launch").arg(path).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).status().map_err(|e| format!("Cannot open the desktop entry with GIO: {e}. Install GIO utilities or choose the game executable."))?;
+        if !status.success() {
+            return Err(format!("Desktop activation failed (GIO exit {}). Check that the desktop entry launches in your current desktop/Flatpak session, or choose its executable in Launch settings.",status.code().map_or("unknown".into(),|c|c.to_string())));
         }
         diagnostic(root, id, "accepted", "Desktop entry accepted by GIO, including its Exec/Path and activation settings. Game-menu arrival is unverified.", None, None, None);
         Ok(())
