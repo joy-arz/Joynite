@@ -1,3 +1,4 @@
+import { homeOrder } from "./home-order.mjs";
 import { normalizeSearch, searchIndex, searchScore } from "./search.mjs";
 export const wrap = (index, count) =>
   count > 0 ? ((index % count) + count) % count : null;
@@ -18,11 +19,11 @@ export function nearestPosition(position, index, count) {
   if (delta < -count / 2) delta += count;
   return position + delta;
 }
-export function filterGames(games, filter, query) {
+export function filterGames(games, filter, query, counts = null) {
   const term = normalizeSearch(query.slice(0, 64));
   const index = searchIndex(games),
     scores = new Map();
-  return games
+  const results = games
     .filter(
       (g) =>
         !g.hidden &&
@@ -45,6 +46,11 @@ export function filterGames(games, filter, query) {
           ? (b.lastPlayed || 0) - (a.lastPlayed || 0)
           : a.name.localeCompare(b.name),
     );
+  if (term) {
+    const direct = results.filter((g) => (scores.get(g.id) ?? 10) < 4);
+    return direct.length ? direct : results.slice(0, 50);
+  }
+  return filter !== "Recently played" ? homeOrder(results, counts) : results;
 }
 export const imageRole = (game, role) =>
   game.images?.[role] ??

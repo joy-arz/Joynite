@@ -9,7 +9,7 @@ Joynite checks quietly a few seconds after launch. Native macOS reads the latest
 
 ## Release procedure
 
-1. Update all application versions together. Run `python3 scripts/validate-release-config.py`.
+1. Run `python3 scripts/set-release-version.py X.Y.Z` to update app version fields without changing dependency pins, then `python3 scripts/validate-release-config.py`.
 2. Push to main and wait for native macOS plus shared Windows/Linux/macOS builds of the same commit to succeed.
 3. Create an official-release draft for the version. Dispatch Publish desktop packages with the two successful run IDs and the draft tag.
 4. The publisher downloads packages and signatures, validates provenance/version consistency, generates latest.json and appcast.xml, then uploads everything to the draft. Inspect the release asset set before publishing it as latest.

@@ -42,6 +42,7 @@ struct JoyniteApplication: App {
                     Button("Refresh metadata") { Task { await model.refresh() } }.disabled(model.busy)
                     Button("Restore hidden games", action: model.restoreHidden)
                     Divider()
+                    Button("Preview library backup…", action: model.previewBackup)
                     Button("Restore library backup…", action: model.importLibrary)
                     Button("Back up library and images…", action: model.exportLibrary)
                     Button("Import and launch help") { model.showHelp = true }
@@ -56,17 +57,21 @@ enum Palette {
     static let panel = Color(red: 0.105, green: 0.105, blue: 0.105)
     static let accent = Color(red: 1, green: 0.43, blue: 0.12)
 }
+private struct SearchFieldAnchorKey: PreferenceKey {
+    static var defaultValue: Anchor<CGRect>? = nil
+    static func reduce(value: inout Anchor<CGRect>?, nextValue: () -> Anchor<CGRect>?) { value = nextValue() ?? value }
+}
 struct LibraryView: View {
     @EnvironmentObject private var model: LibraryModel
     @EnvironmentObject private var updater: SoftwareUpdater
     @StateObject private var input = InputRouter()
     @Environment(\.accessibilityReduceMotion) private var reducedMotion
     @Environment(\.scenePhase) private var scenePhase
-    @FocusState private var searchFocused: Bool
+    @StateObject private var searchFieldHandle = SearchFieldHandle()
     @FocusState private var toolbarFocus: Int?
     @State private var backdropGame: Game?
     @State private var searchExpanded = false
-    @Namespace private var searchMotion
+    @State private var searchSuggestion = 0
     var body: some View {
         ZStack {
             backdrop
@@ -79,19 +84,7 @@ struct LibraryView: View {
                 selectionCaption
                 controls
             }
-            if searchExpanded {
-                Color.black.opacity(0.65).ignoresSafeArea().onTapGesture { closeSearch() }.transition(.opacity)
-                VStack(alignment: .leading, spacing: 18) {
-                    searchField(expanded: true)
-                    Text(model.search.isEmpty ? "Find your next game. Enter selects. Escape cancels." : "Closest matches").font(.callout).foregroundStyle(.secondary)
-                    ForEach(Array(model.visible.prefix(5))) { game in
-                        Button { Task { if await model.finishSearch(select: game.id) { closeSearch() } } } label: {
-                            HStack { Text(game.name).font(.headline); Spacer(); Image(systemName: "return").foregroundStyle(Palette.accent) }.padding(.vertical, 8)
-                        }.buttonStyle(.plain)
-                    }
-                    if model.visible.isEmpty { Text("No close matches. Try another title.").foregroundStyle(.secondary) }
-                }.padding(26).frame(width: 560).background(Palette.sidebar, in: RoundedRectangle(cornerRadius: 20)).overlay(RoundedRectangle(cornerRadius: 20).stroke(Palette.accent.opacity(0.5))).shadow(color: .black.opacity(0.6), radius: 30).transition(.opacity)
-            }
+            if searchExpanded { Color.black.opacity(0.65).ignoresSafeArea().onTapGesture { closeSearch() }.transition(.opacity) }
             if model.showLibrary && !searchExpanded { libraryPanel.frame(width: 245).frame(maxWidth: .infinity, alignment: .leading).transition(.move(edge: .leading)) }
             if model.showDetails, let game = model.selected {
                 VStack(spacing: 0) {
@@ -99,7 +92,18 @@ struct LibraryView: View {
                     GameDetail(game: game)
                 }.frame(width: 340).background(Palette.sidebar.opacity(0.98)).overlay(alignment: .leading) { Rectangle().fill(.white.opacity(0.1)).frame(width: 1) }.frame(maxWidth: .infinity, alignment: .trailing).transition(.move(edge: .trailing))
             }
-        }.background(Palette.canvas).tint(Palette.accent)
+        }.background(Palette.canvas).tint(Palette.accent).disabled(model.restoringBackup)
+            .overlay(alignment: .bottomTrailing) {
+                if let progress = model.backupProgress {
+                    VStack(alignment: .leading, spacing: 10) { Text(model.backupLabel).font(.headline); ProgressView(progress); Button("Cancel", action: model.cancelBackup) }
+                        .padding(18).frame(width: 320).background(Palette.sidebar, in: RoundedRectangle(cornerRadius: 12)).padding(22)
+                }
+            }
+            .overlayPreferenceValue(SearchFieldAnchorKey.self) { anchor in
+                GeometryReader { proxy in
+                    if let anchor { searchWidget(header: proxy[anchor], size: proxy.size) }
+                }
+            }
             .overlay(alignment: .topTrailing) { SoftwareUpdateNotice().environmentObject(updater) }
             .task { await updater.check() }
             .animation(reducedMotion ? nil : .easeInOut(duration: 0.22), value: model.showLibrary)
@@ -110,9 +114,9 @@ struct LibraryView: View {
             .sheet(isPresented: $model.showHelp) { HelpSheet().environmentObject(model) }
             .sheet(isPresented: $model.showPublisherCatalog) { PublisherSheet().environmentObject(model) }
             .onAppear {
-                input.acceptsInput = { !updater.controlsFocused && !model.showMetadata && !model.showHelp && !model.showPublisherCatalog && !model.showCustomMetadata && model.error == nil }
+                input.acceptsInput = { !model.restoringBackup && !updater.controlsFocused && !model.showMetadata && !model.showHelp && !model.showPublisherCatalog && !model.showCustomMetadata && model.error == nil }
                 input.perform = { action in
-                    searchFocused = false
+                    searchFieldHandle.blur()
                     switch action {
                     case .previous: model.move(-1)
                     case .next: model.move(1)
@@ -124,6 +128,8 @@ struct LibraryView: View {
                     case .search: openSearch()
                     }
                 }
+                input.searchIsPresented = { searchExpanded }
+                input.navigateSearch = navigateSearch
                 input.start(); model.ensureSelection()
             }
             .onDisappear { input.stop() }
@@ -132,7 +138,7 @@ struct LibraryView: View {
                 do { try await Task.sleep(nanoseconds: 80_000_000) } catch { return }
                 backdropGame = game
             }
-            .onChange(of: model.search) { _, _ in model.ensureSelection() }
+            .onChange(of: model.search) { _, _ in searchSuggestion = 0; model.ensureSelection() }
             .onChange(of: model.filter) { _, _ in model.ensureSelection() }
             .onChange(of: model.searchRequested) { _, _ in openSearch() }
             .onChange(of: scenePhase) { _, phase in if phase == .active { Task { await model.reconcileUninstalls() } } }
@@ -155,7 +161,7 @@ struct LibraryView: View {
             Text(model.filter).font(.callout).foregroundStyle(.secondary)
             Spacer()
             if model.busy { ProgressView().controlSize(.small) }
-            if !searchExpanded { searchField(expanded: false) } else { Color.clear.frame(width: 210, height: 36) }
+            Color.clear.frame(width: 210, height: 36).anchorPreference(key: SearchFieldAnchorKey.self, value: .bounds) { $0 }
             Menu {
                 Button("Add Mac application…", action: model.addApplication)
                 Button("Add games folder…", action: model.addFolder)
@@ -171,23 +177,45 @@ struct LibraryView: View {
         guard !searchExpanded else { return }
         model.showDetails = false; model.showLibrary = false
         withAnimation(reducedMotion ? nil : .spring(response: 0.38, dampingFraction: 0.88)) { searchExpanded = true }
-        DispatchQueue.main.async { searchFocused = true }
+        searchSuggestion = 0; searchFieldHandle.focus()
     }
     private func closeSearch() {
-        model.search = ""; searchFocused = false; NSApp.keyWindow?.makeFirstResponder(nil)
+        model.search = ""; searchFieldHandle.blur()
         withAnimation(reducedMotion ? nil : .spring(response: 0.38, dampingFraction: 0.88)) { searchExpanded = false }
     }
-    private func searchField(expanded: Bool) -> some View {
-        HStack(spacing: 10) {
-            Image(systemName: "magnifyingglass").foregroundStyle(Palette.accent)
-            if expanded {
-                TextField("Find a game", text: $model.search).textFieldStyle(.plain).font(.system(size: 27, weight: .medium)).focused($searchFocused)
-                    .onSubmit { Task { if await model.finishSearch() { closeSearch() } } }
-                    .onExitCommand { model.search = ""; closeSearch() }
-            } else {
-                Button(action: openSearch) { Text("Find a game").foregroundStyle(.secondary); Spacer(); Text("Space").font(.caption) }.buttonStyle(.plain)
+    private func navigateSearch(_ delta: Int) {
+        guard !model.searchPending else { return }
+        let count = min(5, model.visible.count)
+        if count > 0 { searchSuggestion = (searchSuggestion + delta + count) % count }
+    }
+    private func submitSearch() {
+        let id = model.searchPending ? nil : model.visible.prefix(5).dropFirst(searchSuggestion).first?.id
+        if model.commitSearch(select: id) { closeSearch(); return }
+        if model.searchPending { Task { if await model.finishSearch() { closeSearch() } } }
+    }
+    private func searchWidget(header: CGRect, size: CGSize) -> some View {
+        VStack(alignment: .leading, spacing: searchExpanded ? 18 : 0) {
+            HStack(spacing: 10) {
+                Image(systemName: "magnifyingglass").foregroundStyle(Palette.accent)
+                PersistentSearchField(text: $model.search, expanded: searchExpanded, handle: searchFieldHandle, onFocus: openSearch, onSubmit: submitSearch, onCancel: closeSearch, onNavigate: navigateSearch).frame(height: searchExpanded ? 34 : 18)
+                if !searchExpanded { Text("Space").font(.caption).foregroundStyle(.secondary) }
+            }.padding(searchExpanded ? 16 : 9).background(.black.opacity(0.8), in: RoundedRectangle(cornerRadius: searchExpanded ? 12 : 9))
+                .overlay { if !searchExpanded { Color.clear.contentShape(Rectangle()).onTapGesture(perform: openSearch) } }
+            if searchExpanded {
+                Text(model.searchPending ? "Finding matches…" : model.search.isEmpty ? "Enter selects. ↑ ↓ choose. Escape cancels." : "Closest matches · ↑ ↓ choose").font(.callout).foregroundStyle(.secondary)
+                ForEach(Array((model.searchPending ? [] : Array(model.visible.prefix(5))).enumerated()), id: \.element.id) { index, game in
+                    Button { Task { if await model.finishSearch(select: game.id) { closeSearch() } } } label: {
+                        HStack { Text(game.name).font(.headline); Spacer(); Image(systemName: "return").foregroundStyle(Palette.accent) }.padding(10).frame(maxWidth: .infinity, alignment: .leading).background(index == searchSuggestion ? Palette.accent.opacity(0.16) : .clear, in: RoundedRectangle(cornerRadius: 8))
+                    }.buttonStyle(.plain)
+                }
+                if model.visible.isEmpty { Text("No close matches. Try another title.").foregroundStyle(.secondary) }
             }
-        }.padding(expanded ? 16 : 9).frame(width: expanded ? 508 : 192).background(.black.opacity(0.8), in: RoundedRectangle(cornerRadius: expanded ? 12 : 9)).matchedGeometryEffect(id: "library-search", in: searchMotion)
+        }.padding(searchExpanded ? 26 : 0).frame(width: searchExpanded ? min(560, size.width - 60) : header.width)
+            .background(searchExpanded ? Palette.sidebar : .clear, in: RoundedRectangle(cornerRadius: 20))
+            .overlay(RoundedRectangle(cornerRadius: 20).stroke(searchExpanded ? Palette.accent.opacity(0.5) : .clear))
+            .shadow(color: .black.opacity(searchExpanded ? 0.6 : 0), radius: 30)
+            .position(x: searchExpanded ? size.width / 2 : header.midX, y: searchExpanded ? size.height / 2 : header.midY)
+            .onTapGesture { if !searchExpanded { openSearch() } }
     }
     private var selectionCaption: some View {
         HStack(spacing: 14) {
@@ -390,6 +418,12 @@ struct GameDetail: View {
                 if !game.releaseDate.isEmpty { field("Released", game.releaseDate) }
                 if !game.genres.isEmpty { field("Genres", game.genres.joined(separator: ", ")) }
                 if !game.metadataSource.isEmpty { field("Metadata", game.metadataSource) }
+                field("Opened through Joynite", String(game.launchCount ?? 0))
+                Text("Only successful Joynite launch requests are counted. No external play history is read.").font(.caption).foregroundStyle(.secondary)
+                if let report = model.launchReport(for: game) {
+                    field("Last launch · " + report.state, report.detail)
+                    if let code = report.exitCode { field("Runtime exit code", String(code)) }
+                }
                 if game.cachedArtwork != nil { Label("Artwork saved on this Mac", systemImage: "internaldrive").font(.caption).foregroundStyle(.secondary) }
                 Divider()
                 Button(game.favorite ? "Remove from favorites" : "Add to favorites") { model.toggleFavorite(game) }

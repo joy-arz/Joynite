@@ -1,3 +1,12 @@
+## Joynite 0.7.0
+
+- Local launch counts and favorite-first startup ranking. The five featured cards appear as 4th · 2nd · 1st · 3rd · 5th; remaining ranks continue to the right. Older games start at zero, with no imported playtime/history. Ranking uses the session's initial counts to avoid reshuffles while browsing.
+- Preserve the native search field during animation, focus it synchronously, select suggestions with Up/Down, and prefer direct matches over fuzzy fallbacks.
+- Background backup/restore with progress and cancellation, plus an optional integrity-checked preview that does not modify the library. Canceled restores retain existing records.
+- Changed-record metadata events reduce shared-library transfers. Stale patches cannot restore removed games.
+- Local launch diagnostics distinguish accepted requests, process exits and errors without claiming game-menu arrival. Counts/overrides survive metadata updates and backups.
+- A structured release-version helper preserves dependency pins; native packaging rebuilds its generated bundle cleanly.
+
 ## Joynite 0.6.1
 
 - Add bundled metadata for EDOPro / Project Ignis, YGOPro, YGOPro Percy, YGOPro 2, KoishiPro, YGO Omega and MDPro3. Explicit client/executable aliases keep related simulators distinct.

@@ -1,5 +1,13 @@
 # Joynite validation record
 
+## Version 0.7.0 — 2026-10-29
+
+268 native assertions without live-provider checks; 22 Rust tests plus the separately ignored scale profile; 16 frontend tests; 3 release-feed tests. Checks cover legacy zero counts, saturating increments, favorite/count ranking, centered top-five slots, stable session counts, atomic count saves, canceled backups, read-only previews, local diagnostic files and changed-record events for a 10,000-game fixture. Dependency pins remain unchanged.
+
+Isolated native UI: a favorite started in the center despite a higher-count non-favorite; after removing the favorite and reopening, the highest-count game started selected. Rapid uppercase Space → Mindustry → Enter closed search without opening details; the next Enter launched it. The test count moved from 60 to 61 and persisted, while the real library's count stayed absent. Up/Down selected Project Ignis: EDOPro from suggestions, and Tab + Right resumed browsing. Tests used a copied library, not fabricated user statistics.
+
+Developer ID/notarization, physical-controller coverage and real Windows/Linux interrupted-install/disk-full recovery still require appropriate credentials/devices or an isolated environment. No real game was uninstalled.
+
 ## Version 0.6.1 — 2026-10-29
 
 243 native assertions without live-provider checks, including seven Yu-Gi-Oh! catalog entries, executable/client aliases, unrelated-name rejection, supported-host boundaries, and preservation of custom text/artwork/favorites/launch paths. Shared core: 18 tests, including cached square-logo retention; the separate scale benchmark remains ignored in the normal test run. Six curated project-art URLs returned valid images during this update; MDPro3 retains native app-icon/custom-art fallback. Native/shared catalog generation and release/feed checks pass. No new validation application bundle was needed for this metadata change.

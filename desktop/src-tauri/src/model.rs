@@ -48,10 +48,17 @@ pub struct Game {
     pub metadata_source: String,
     pub metadata_updated: Option<f64>,
     pub favorite: bool,
+    pub launch_count: u32,
     pub last_played: Option<f64>,
     pub added_at: f64,
     #[serde(flatten)]
     pub extra: BTreeMap<String, serde_json::Value>,
+}
+impl Game {
+    pub fn record_launch(&mut self) {
+        self.launch_count = self.launch_count.saturating_add(1);
+        self.last_played = Some(now());
+    }
 }
 impl Default for Game {
     fn default() -> Self {
@@ -84,6 +91,7 @@ impl Default for Game {
             metadata_source: String::new(),
             metadata_updated: None,
             favorite: false,
+            launch_count: 0,
             last_played: None,
             added_at: now(),
             extra: BTreeMap::new(),
@@ -200,4 +208,22 @@ pub fn hash(value: &str) -> String {
 pub fn is_launcher_id(id: &str) -> bool {
     let id = id.to_ascii_lowercase();
     id.starts_with("io.github.joy-arz.joynite") || id.starts_with("io.github.joy-arz.playnite")
+}
+#[cfg(test)]
+mod local_launch_tests {
+    use super::*;
+    #[test]
+    fn counts_only_explicit_joynite_launches_and_migrates_legacy_records() {
+        let mut game: Game =
+            serde_json::from_str(r#"{"id":"legacy","name":"Legacy","lastPlayed":900000000}"#)
+                .unwrap();
+        assert_eq!(game.launch_count, 0);
+        game.record_launch();
+        assert_eq!(game.launch_count, 1);
+        game.launch_count = u32::MAX;
+        game.record_launch();
+        assert_eq!(game.launch_count, u32::MAX);
+        let restored: Game = serde_json::from_slice(&serde_json::to_vec(&game).unwrap()).unwrap();
+        assert_eq!(restored.launch_count, u32::MAX);
+    }
 }

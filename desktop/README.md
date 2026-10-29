@@ -73,3 +73,11 @@ Press Space or Command/Ctrl-F for the expanding center search. Enter selects the
 Add / manage provides **Back up library and images** and **Restore library backup**. ZIP backups include metadata and available cached/custom images with a versioned SHA-256 manifest. Restore validates all entries before merging and preserves existing edits. Legacy JSON imports remain supported. Launch paths can need re-adding on another computer.
 
 The bundled project catalog also recognizes EDOPro / Project Ignis, YGOPro, legacy YGOPro Percy, YGOPro 2, KoishiPro, YGO Omega and MDPro3. Matching is exact after case/punctuation normalization, with explicit executable and launcher aliases. Project descriptions work offline; downloaded artwork remains in the existing cache. Custom text/images take precedence.
+
+## Startup ranking and follow-up improvements
+
+Joynite records successful launch requests locally as launchCount. It never queries store playtime or OS launch histories for this statistic, and legacy records start at zero. Favorites rank ahead of other games; launch count then title/ID break ties. Startup shows ranks 4, 2, 1, 3, 5 around the center, and remaining ranks continue rightward around the infinite carousel. A session keeps its initial counts for ordering, so playing does not suddenly reshuffle cards. The count is visible in details and included in backups.
+
+Search supports Up/Down suggestion selection and uses fuzzy results only when direct matches are absent. Metadata hydration emits changed-record patches instead of a complete snapshot per game; stale patches cannot resurrect deleted records. Complete snapshots remain for initial load and explicit library operations.
+
+Backup progress/cancel controls run independently of the library mutex. Cancellation before the restore commit rolls back newly copied artwork. **Preview backup** verifies a ZIP and reports added/kept games without applying it. Destination write permissions and cross-machine game paths can still differ. Launch details read a small local report for processes/handoffs initiated by Joynite; no external game-usage history feeds the ranking.

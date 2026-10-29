@@ -110,3 +110,15 @@ Press **Space** (or Command-F) to expand search into the center. Matching ignore
 ## Yu-Gi-Oh! project metadata
 
 EDOPro / Project Ignis, YGOPro, legacy YGOPro Percy, YGOPro 2, KoishiPro, YGO Omega and MDPro3 have bundled descriptions, developers, genres, and project links. Recognized application names are included in startup discovery. Use the publisher catalog to attach a chosen entry manually when an installation has a different name. Text is available offline; available project artwork downloads into the same persistent cache. Custom overrides stay in place.
+
+## Startup ranking and local launch counts
+
+At each fresh launch, Joynite ranks visible games by favorite status, then accepted Joynite launch count, then title/ID for ties. Rank 1 starts selected in the center; the visible row is ranks 4, 2, 1, 3, 5. The rest continue in rank order to the right after rank 5, with infinite wraparound. Counts are frozen for ranking while the app stays open so a launch does not reshuffle its neighbors. Favorite and title edits can still update ordering deliberately.
+
+Old records start at zero: no counts are inferred from lastPlayed, Steam playtime or operating-system histories. Successful application/runtime/client handoffs increment the local counter once. Missing paths and rejected launch requests do not count; a later crash does not undo an accepted request. The count is in game details and travels with Joynite library backups. This counts opens, not play duration or verified menu arrivals.
+
+Search keeps one native field mounted through its expansion. Up/Down chooses among suggestions; direct title/genre matches are used before fuzzy fallbacks. Large queries remain off the main thread.
+
+Library backup export/restore runs off the UI thread with progress and cancellation. Restore pauses mutations until its commit completes; cancellation before commit rolls back newly copied artwork and keeps the previous library. **Preview library backup…** verifies a ZIP and shows additions/kept records without applying it. Preview does not guarantee destination write permissions or game-path availability on another computer.
+
+Details also show a bounded local report for launches made by Joynite: accepted request, process exit, or launch error. Application/client handoffs do not prove a game reached its menu. Compatibility runtime logs remain separate under Logs.

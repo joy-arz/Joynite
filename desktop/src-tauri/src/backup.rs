@@ -28,7 +28,26 @@ fn valid(path: &str) -> bool {
 fn fail(error: impl std::fmt::Display) -> String {
     error.to_string()
 }
+#[cfg(test)]
 pub fn export(library: &Library, root: &Path, path: &Path) -> Result<(), String> {
+    export_controlled(library, root, path, None)
+}
+pub fn export_controlled(
+    library: &Library,
+    root: &Path,
+    path: &Path,
+    control: Option<&Control>,
+) -> Result<(), String> {
+    let expected = 1 + library
+        .games
+        .iter()
+        .map(|g| {
+            fs::read_dir(root.join("Media").join(hash(&g.id)))
+                .map(|e| e.count() as u64)
+                .unwrap_or(0)
+        })
+        .sum::<u64>();
+    tick(control, 0, expected, "Backing up library and images")?;
     let parent = path.parent().ok_or("Choose a backup destination")?;
     let mut temp = tempfile::NamedTempFile::new_in(parent).map_err(fail)?;
     {
@@ -38,6 +57,12 @@ pub fn export(library: &Library, root: &Path, path: &Path) -> Result<(), String>
         let mut hashes = BTreeMap::new();
         let mut total = 0u64;
         let mut add = |name: String, bytes: Vec<u8>| -> Result<(), String> {
+            tick(
+                control,
+                hashes.len() as u64,
+                expected,
+                "Backing up library and images",
+            )?;
             total += bytes.len() as u64;
             if bytes.len() > 25_000_000 || total > 1_000_000_000 || hashes.len() >= 50_000 {
                 return Err("Backup exceeds the supported size".into());
@@ -46,7 +71,13 @@ pub fn export(library: &Library, root: &Path, path: &Path) -> Result<(), String>
                 return Err("Duplicate backup path".into());
             }
             archive.start_file(name, options).map_err(fail)?;
-            archive.write_all(&bytes).map_err(fail)
+            for chunk in bytes.chunks(65536) {
+                if let Some(c) = control {
+                    c.check()?;
+                }
+                archive.write_all(chunk).map_err(fail)?;
+            }
+            Ok(())
         };
         add(
             "library.json".into(),
@@ -88,11 +119,46 @@ pub fn export(library: &Library, root: &Path, path: &Path) -> Result<(), String>
             .map_err(fail)?;
         archive.finish().map_err(fail)?;
     }
+    if let Some(c) = control {
+        c.check()?;
+    }
     temp.as_file().sync_all().map_err(fail)?;
     temp.persist(path).map_err(fail)?;
+    if let Some(c) = control {
+        let _ = c.update(expected, expected, "Backup complete");
+    }
     Ok(())
 }
+#[cfg(test)]
 pub fn restore(path: &Path, current: &Library, root: &Path) -> Result<Library, String> {
+    restore_controlled(path, current, root, None)
+}
+pub fn restore_controlled(
+    path: &Path,
+    current: &Library,
+    root: &Path,
+    control: Option<&Control>,
+) -> Result<Library, String> {
+    restore_impl(path, current, root, control, false)
+}
+pub fn preview_controlled(
+    path: &Path,
+    current: &Library,
+    root: &Path,
+    control: Option<&Control>,
+) -> Result<Library, String> {
+    restore_impl(path, current, root, control, true)
+}
+fn restore_impl(
+    path: &Path,
+    current: &Library,
+    root: &Path,
+    control: Option<&Control>,
+    preview_only: bool,
+) -> Result<Library, String> {
+    if let Some(c) = control {
+        c.check()?;
+    }
     let file = fs::File::open(path).map_err(fail)?;
     let mut archive = ZipArchive::new(file).map_err(fail)?;
     if archive.len() > 50_001 {
@@ -103,6 +169,12 @@ pub fn restore(path: &Path, current: &Library, root: &Path) -> Result<Library, S
     let mut total = 0u64;
     let mut manifest = None;
     for i in 0..archive.len() {
+        tick(
+            control,
+            i as u64,
+            archive.len() as u64 + 1,
+            "Verifying backup integrity",
+        )?;
         let mut entry = archive.by_index(i).map_err(fail)?;
         let name = entry.name().to_string();
         if !entry.is_file()
@@ -163,11 +235,17 @@ pub fn restore(path: &Path, current: &Library, root: &Path) -> Result<Library, S
             next.folders.push(folder);
         }
     }
+    if preview_only {
+        return Ok(next);
+    }
     let mut created = vec![];
     let commit = (|| -> Result<(), String> {
         for name in hashes.keys().filter(|n| {
             n.starts_with("Media/") && folders.contains(n.split('/').nth(1).unwrap_or(""))
         }) {
+            if let Some(c) = control {
+                c.check()?;
+            }
             let target = root.join(name);
             for path in [
                 root.join("Media"),
@@ -187,6 +265,9 @@ pub fn restore(path: &Path, current: &Library, root: &Path) -> Result<Library, S
             fs::create_dir_all(target.parent().unwrap()).map_err(fail)?;
             fs::copy(stage.path().join(name), &target).map_err(fail)?;
             created.push(target);
+        }
+        if let Some(c) = control {
+            c.check()?;
         }
         save_library(root, &next)
     })();
@@ -222,6 +303,10 @@ mod tests {
         };
         let zip = source.path().join("backup.zip");
         export(&library, source.path(), &zip).unwrap();
+        let preview =
+            preview_controlled(&zip, &Library::default(), destination.path(), None).unwrap();
+        assert_eq!(preview.games.len(), 1);
+        assert!(!destination.path().join("library.json").exists());
         let restored = restore(&zip, &Library::default(), destination.path()).unwrap();
         assert_eq!(restored.games[0].name, "Inscryption");
         assert_eq!(
@@ -264,5 +349,107 @@ mod tests {
             assert!(restore(&dir.path().join("bad.zip"), &Library::default(), dir.path()).is_err());
             assert!(!dir.path().join("library.json").exists());
         }
+    }
+}
+#[derive(Clone, Default, Serialize)]
+pub struct Status {
+    pub active: bool,
+    pub completed: u64,
+    pub total: u64,
+    pub phase: String,
+}
+#[derive(Default)]
+pub struct Control {
+    active: std::sync::atomic::AtomicBool,
+    cancelled: std::sync::atomic::AtomicBool,
+    status: std::sync::Mutex<Status>,
+}
+pub struct Run<'a>(&'a Control);
+impl Drop for Run<'_> {
+    fn drop(&mut self) {
+        self.0
+            .active
+            .store(false, std::sync::atomic::Ordering::Release);
+    }
+}
+impl Control {
+    pub fn begin(&self, phase: &str) -> Result<Run<'_>, String> {
+        self.active
+            .compare_exchange(
+                false,
+                true,
+                std::sync::atomic::Ordering::AcqRel,
+                std::sync::atomic::Ordering::Acquire,
+            )
+            .map_err(|_| "Another backup operation is active")?;
+        self.cancelled
+            .store(false, std::sync::atomic::Ordering::Release);
+        if let Ok(mut status) = self.status.lock() {
+            *status = Status {
+                active: true,
+                completed: 0,
+                total: 1,
+                phase: phase.into(),
+            };
+        }
+        Ok(Run(self))
+    }
+    pub fn cancel(&self) {
+        self.cancelled
+            .store(true, std::sync::atomic::Ordering::Release);
+    }
+    pub fn check(&self) -> Result<(), String> {
+        if self.cancelled.load(std::sync::atomic::Ordering::Acquire) {
+            Err("Backup operation cancelled".into())
+        } else {
+            Ok(())
+        }
+    }
+    pub fn update(&self, completed: u64, total: u64, phase: &str) -> Result<(), String> {
+        self.check()?;
+        let mut status = self.status.lock().map_err(fail)?;
+        *status = Status {
+            active: true,
+            completed,
+            total: total.max(1),
+            phase: phase.into(),
+        };
+        Ok(())
+    }
+    pub fn status(&self) -> Status {
+        let mut status = self.status.lock().map(|s| s.clone()).unwrap_or_default();
+        status.active = self.active.load(std::sync::atomic::Ordering::Acquire);
+        status
+    }
+}
+fn tick(control: Option<&Control>, completed: u64, total: u64, phase: &str) -> Result<(), String> {
+    if let Some(c) = control {
+        c.update(completed, total, phase)?;
+    }
+    Ok(())
+}
+#[cfg(test)]
+mod cancellation_tests {
+    use super::*;
+    #[test]
+    fn cancellation_keeps_existing_backup_and_library() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("backup.zip");
+        fs::write(&path, b"original backup").unwrap();
+        let control = Control::default();
+        let run = control.begin("Backup").unwrap();
+        assert!(control.begin("Other").is_err());
+        control.cancel();
+        assert!(
+            export_controlled(&Library::default(), root.path(), &path, Some(&control)).is_err()
+        );
+        assert_eq!(fs::read(&path).unwrap(), b"original backup");
+        assert!(
+            restore_controlled(&path, &Library::default(), root.path(), Some(&control)).is_err()
+        );
+        assert!(!root.path().join("library.json").exists());
+        drop(run);
+        assert!(!control.status().active);
+        assert!(control.begin("Retry").is_ok());
     }
 }

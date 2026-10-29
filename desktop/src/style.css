@@ -847,3 +847,30 @@ body.searching #app::before {
     transition: none;
   }
 }
+
+.search-suggestions button[aria-selected="true"] {
+  background: #ff6e1f29;
+  color: #fff;
+}
+
+.backup-activity {
+  position: fixed;
+  right: 22px;
+  bottom: 110px;
+  width: 320px;
+  padding: 18px;
+  background: #101010;
+  border: 1px solid #ff6e1f88;
+  border-radius: 12px;
+  z-index: 40;
+}
+.backup-activity p {
+  margin: 0 0 12px;
+}
+.backup-activity progress {
+  width: 100%;
+  accent-color: #ff6e1f;
+}
+.backup-activity button {
+  margin-top: 12px;
+}

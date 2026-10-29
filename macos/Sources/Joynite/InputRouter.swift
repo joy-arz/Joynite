@@ -11,6 +11,8 @@ import SwiftUI
     @Published var libraryGlyph = "x.circle"
     @Published var backGlyph = "b.circle"
     var perform: ((Action) -> Void)?
+    var searchIsPresented: (() -> Bool)?
+    var navigateSearch: ((Int) -> Void)?
     var acceptsInput: (() -> Bool)?
     private var monitors: [Any] = []
     private var observers: [NSObjectProtocol] = []
@@ -58,11 +60,15 @@ import SwiftUI
         if event.type == .flagsChanged {
             let down = event.modifierFlags.contains(.shift)
             defer { shiftDown = down }
-            guard canAct, !textEntry, down, !shiftDown,
+            guard canAct, searchIsPresented?() != true, !textEntry, down, !shiftDown,
                   event.modifierFlags.intersection([.command, .option, .control]).isEmpty else { return event }
             usingController = false; perform?(.info); return event
         }
         if canAct, event.type == .keyDown, event.keyCode == 48 { return nil }
+        if canAct, searchIsPresented?() == true, event.type == .keyDown,
+           event.modifierFlags.intersection([.command, .option, .control]).isEmpty, [125,126].contains(event.keyCode) {
+            navigateSearch?(event.keyCode == 125 ? 1 : -1); return nil
+        }
         guard canAct, !textEntry else { return event }
         if event.type == .scrollWheel {
             guard abs(event.scrollingDeltaX) > abs(event.scrollingDeltaY), abs(event.scrollingDeltaX) > 3 else { return event }

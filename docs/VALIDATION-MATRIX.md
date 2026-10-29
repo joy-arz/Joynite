@@ -15,3 +15,9 @@ Observed on this Apple Silicon Mac on 2026-10-29. No real game was uninstalled.
 | macOS signing | Ad-hoc app and signed update archives. Local identity inventory reports zero valid code-signing identities. | Developer ID/notarization needs the maintainer's Apple signing setup. |
 
 Reproduce scale profiles with `swift run --package-path macos -c release JoyniteValidation --benchmark` and `cargo test --release --manifest-path desktop/src-tauri/Cargo.toml large_library_profile -- --ignored --nocapture`. Fixture timings do not establish full-library artwork, slow-disk or other-device performance.
+
+## Version 0.7 follow-up
+
+- A copied seven-game native library verified favorite-first startup and the 4/2/1/3/5 visible arrangement. Removing its favorite and reopening selected the highest-count game. The freshly played game did not outrank a higher counter merely because lastPlayed was newer.
+- The native search test submitted uppercase Mindustry rapidly, closed search synchronously and launched with the next Enter. The isolated count changed 60 → 61; the real library's field remained absent. The test game was closed afterward. Up/Down selection and Tab/arrow browsing were also checked.
+- Core tests cover canceled export/restore, unchanged existing backups, optional preview without library writes, failed counter persistence, sparse metadata events and local launch reports. Real platform/device constraints above remain.

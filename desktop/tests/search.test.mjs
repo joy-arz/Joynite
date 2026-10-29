@@ -18,3 +18,14 @@ test("case, accents, omissions, multiple typos and unrelated queries", () => {
   );
   assert.equal(filterGames(games, "Favorites", "inscryption").length, 0);
 });
+test("direct matches suppress low-confidence fuzzy results", () => {
+  const list = [...games, { id: "other", name: "Inscription", genres: [] }];
+  assert.deepEqual(
+    filterGames(list, "All games", "Inscryption").map((g) => g.name),
+    ["Inscryption"],
+  );
+  assert.equal(
+    filterGames(games, "All games", "inkriotion")[0].name,
+    "Inscryption",
+  );
+});

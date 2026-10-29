@@ -12,6 +12,8 @@ import {
 import "./style.css";
 import logo from "./logo.svg";
 import kofi from "./kofi.svg";
+import { mergeLibraryPatch } from "./library-patch.mjs";
+import { localLaunchCount } from "./home-order.mjs";
 import { startSoftwareUpdates } from "./software-updates.js";
 import {
   enable as enableStartup,
@@ -27,12 +29,12 @@ $("#app").innerHTML = `
 <footer><div class="hints" id="hints"></div><span id="input-kind">⌨ Keyboard</span><div class="status-row"><span id="status" role="status">Loading your library…</span><button id="notices" hidden></button><button id="cancel" hidden>Stop metadata fetch</button><button id="settings-open" title="Settings (Command/Ctrl+,)" aria-label="Joynite settings">⚙ Settings</button><button id="support" title="Support joy-arz on Ko-fi" aria-label="Support Joynite on Ko-fi"><img src="${kofi}" alt="">Support Joynite</button></div></footer>
 <aside id="library-panel" hidden><div class="panel-heading"><h2>Libraries</h2><button id="library-close" aria-label="Close libraries">×</button></div><nav id="filters"></nav><div class="panel-bottom"><button id="restore">Restore hidden games</button><button id="help">Help and notices</button></div></aside>
 <aside id="details" hidden><div class="panel-heading"><h2>Game details</h2><button id="details-close" aria-label="Close details">×</button></div><div id="detail-content"></div></aside>
-<dialog id="actions"><div class="dialog-heading"><h2>Your library</h2><button data-close aria-label="Close">×</button></div><div class="action-grid"><button id="add-game">Add game application</button><button id="add-folder">Add games / Wine-prefix folder</button><button id="scan">Scan installed games</button><button id="refresh">Refresh metadata</button><button id="edit-custom">Edit selected metadata / images</button><button id="publishers">Publisher metadata catalog</button><button id="import">Restore library backup</button><button id="export">Back up library and images</button><button id="action-settings">Settings</button><button id="action-help">Help and notices</button></div></dialog>
+<dialog id="actions"><div class="dialog-heading"><h2>Your library</h2><button data-close aria-label="Close">×</button></div><div class="action-grid"><button id="add-game">Add game application</button><button id="add-folder">Add games / Wine-prefix folder</button><button id="scan">Scan installed games</button><button id="refresh">Refresh metadata</button><button id="edit-custom">Edit selected metadata / images</button><button id="publishers">Publisher metadata catalog</button><button id="preview-backup">Preview backup</button><button id="import">Restore library backup</button><button id="export">Back up library and images</button><button id="action-settings">Settings</button><button id="action-help">Help and notices</button></div></dialog>
 <dialog id="metadata"><div class="dialog-heading"><h2>Find metadata</h2><button data-close aria-label="Close">×</button></div><p id="match-for"></p><form id="search-form"><input id="metadata-query" placeholder="Game title" aria-label="Game title"><button>Search Steam</button></form><div id="matches"></div><form id="page-form"><input id="metadata-page" placeholder="HTTPS Steam, GOG, itch.io or publisher page" aria-label="Store page"><button>Fetch page</button></form></dialog>
 <dialog id="publisher-list"><div class="dialog-heading"><h2>Beyond the stores</h2><button data-close aria-label="Close">×</button></div><p>Bundled metadata does not change a game's platform compatibility.</p><div id="publisher-items"></div></dialog>
 <dialog id="help-dialog"><div class="dialog-heading"><h2>Library help</h2><button data-close aria-label="Close">×</button></div><div id="help-content"></div></dialog>
 <dialog id="custom-editor"><div class="dialog-heading"><h2>Custom metadata & images</h2><button data-close aria-label="Close">×</button></div><p>Saved locally. Automatic refresh preserves your overrides. Images are copied into the offline cache.</p><form id="custom-form" class="custom-form"><label>Title<input id="custom-name" required maxlength="50000"></label><label>Developer<input id="custom-developer" maxlength="50000"></label><label>Release date<input id="custom-releaseDate" maxlength="50000"></label><label>Genres, separated by commas<input id="custom-genres" maxlength="50000"></label><label>Description<textarea id="custom-summary" maxlength="50000"></textarea></label><button id="custom-reset-text" type="button">Restore automatic text</button><div id="custom-images"></div><div class="custom-footer"><button id="custom-cancel" type="button">Cancel</button><button class="primary" type="submit">Save offline</button></div></form></dialog>
-<dialog id="settings-dialog"><div class="dialog-heading"><h2>Joynite settings</h2><button data-close aria-label="Close">×</button></div><label class="startup-setting"><input id="startup-enabled" type="checkbox">Launch Joynite when I sign in</label><p>Open your library automatically after signing in to this computer. Off by default. Keep Joynite in its installed location so the startup entry stays valid.</p><p id="startup-status" role="status"></p><button id="startup-refresh">Check startup setting</button><p id="update-check-status">Updates are checked quietly when Joynite opens.</p><button id="update-check">Check for updates…</button><p>Maintained by joy-arz.</p><button id="settings-support" class="support-link"><img src="${kofi}" alt="">Support Joynite on Ko-fi</button></dialog>
+<dialog id="settings-dialog"><div class="dialog-heading"><h2>Joynite settings</h2><button data-close aria-label="Close">×</button></div><label class="startup-setting"><input id="startup-enabled" type="checkbox">Launch Joynite when I sign in</label><p>Open your library automatically after signing in to this computer. Off by default. Keep Joynite in its installed location so the startup entry stays valid.</p><p id="startup-status" role="status"></p><button id="startup-refresh">Check startup setting</button><p id="update-check-status">Updates are checked quietly when Joynite opens.</p><button id="update-check">Check for updates…</button><h3>Library order</h3><p>Favorites first, then opens made through Joynite. Counts stay local and start at zero for older libraries.</p><p>Maintained by joy-arz.</p><button id="settings-support" class="support-link"><img src="${kofi}" alt="">Support Joynite on Ko-fi</button></dialog>
 <div id="announcement" class="sr-only" aria-live="polite"></div>`;
 
 let data = { games: [], folders: [], notices: [], platform: "" },
@@ -43,7 +45,9 @@ let data = { games: [], folders: [], notices: [], platform: "" },
   frame = 0,
   previousPosition = 0;
 const cards = new Map();
-let searchExpanded = false;
+const startupCounts = new Map();
+let searchExpanded = false,
+  searchSuggestion = 0;
 let workerHasData = false,
   workerFailed = false;
 let searchRevision = 0,
@@ -84,7 +88,7 @@ let busy = false,
   unlisten = null;
 searchWorker.onerror = () => {
   workerFailed = true;
-  visible = filterGames(data.games, filter, query);
+  visible = filterGames(data.games, filter, query, startupCounts);
   position = 0;
   schedule();
   renderSearchSuggestions();
@@ -105,16 +109,45 @@ function report(error) {
   status(String(error));
   message(String(error), { title: "Joynite", kind: "error" }).catch(() => {});
 }
+function patchLibrary(patch) {
+  const next = mergeLibraryPatch(data, patch);
+  if (next === data) return;
+  const changed = new Map(patch.games.map((g) => [g.id, g]));
+  const needsFilter = data.games.some((g) => {
+    const next = changed.get(g.id);
+    return (
+      next &&
+      (g.name !== next.name ||
+        g.favorite !== next.favorite ||
+        g.hidden !== next.hidden ||
+        g.store !== next.store ||
+        (query && JSON.stringify(g.genres) !== JSON.stringify(next.genres)))
+    );
+  });
+  if (needsFilter) {
+    snapshot(next);
+    return;
+  }
+  data = next;
+  visible = visible.map((g) => changed.get(g.id) || g);
+  schedule();
+  if (!$("#details").hidden) renderDetails();
+  $("#notices").hidden = !data.notices.length;
+  $("#notices").textContent = `${data.notices.length} notices`;
+}
 function snapshot(next) {
+  if ((next.revision || 0) < (data.revision || 0)) return;
   workerHasData = false;
   searchRevision++;
   searchResolve?.();
   searchResolve = null;
-  if ((next.revision || 0) < (data.revision || 0)) return;
   const id = selected()?.id;
   const oldIDs = visible.map((g) => g.id).join("\n");
   data = next;
-  visible = filterGames(data.games, filter, query);
+  for (const game of data.games)
+    if (!startupCounts.has(game.id))
+      startupCounts.set(game.id, localLaunchCount(game));
+  visible = filterGames(data.games, filter, query, startupCounts);
   const newIDs = visible.map((g) => g.id).join("\n");
   if (oldIDs !== newIDs) {
     const index = visible.findIndex((g) => g.id === id);
@@ -133,7 +166,7 @@ function changeFilter() {
   searchRevision++;
   searchResolve?.();
   searchResolve = null;
-  visible = filterGames(data.games, filter, query);
+  visible = filterGames(data.games, filter, query, startupCounts);
   position = 0;
   previousPosition = 0;
   cards.forEach((c) => c.remove());
@@ -378,12 +411,27 @@ function renderDetails() {
   description.textContent =
     game.summary || "Find metadata to add a description.";
   container.append(description);
+  invoke("launch_diagnostics", { id: game.id })
+    .then((report) => {
+      if (!report || selected()?.id !== game.id || !container.isConnected)
+        return;
+      const p = document.createElement("p");
+      p.className = "launch-diagnostic";
+      p.textContent = `Last launch: ${report.state}. ${report.detail}${report.exitCode != null ? ` Exit code: ${report.exitCode}.` : ""}`;
+      container.append(p);
+    })
+    .catch(() => {});
   for (const [label, value] of [
     ["Developer", game.developer],
     ["Released", game.releaseDate],
     ["Genres", (game.genres || []).join(", ")],
     ["Runtime", game.compatibility?.label],
     ["Metadata", game.metadataSource],
+    ["Opened through Joynite", String(localLaunchCount(game))],
+    [
+      "Launch tracking",
+      "Only successful Joynite launch requests are counted. No external play history is read.",
+    ],
   ]) {
     if (value) {
       const item = document.createElement("div");
@@ -674,10 +722,17 @@ function renderHints() {
 const searchBox = $(".search");
 const suggestions = document.createElement("div");
 suggestions.className = "search-suggestions";
+suggestions.id = "search-results";
+suggestions.setAttribute("role", "listbox");
+$("#search").setAttribute("role", "combobox");
+$("#search").setAttribute("aria-controls", "search-results");
+$("#search").setAttribute("aria-expanded", "false");
 searchBox.append(suggestions);
 function openSearch() {
   if (searchExpanded) return;
   searchExpanded = true;
+  searchSuggestion = 0;
+  $("#search").setAttribute("aria-expanded", "true");
   searchBox.classList.add("expanded");
   document.body.classList.add("searching");
   $("#search").focus();
@@ -699,6 +754,8 @@ function closeSearch(id = null) {
     changeFilter();
   }
   searchExpanded = false;
+  $("#search").setAttribute("aria-expanded", "false");
+  $("#search").removeAttribute("aria-activedescendant");
   searchBox.classList.remove("expanded");
   document.body.classList.remove("searching");
   $("#search").blur();
@@ -708,11 +765,17 @@ function renderSearchSuggestions() {
   const caption = document.createElement("p");
   caption.textContent = query
     ? "Closest matches"
-    : "Enter selects. Escape cancels.";
+    : "Enter selects. ↑ ↓ choose. Escape cancels.";
   suggestions.append(caption);
-  for (const game of visible.slice(0, 5)) {
+  for (const [index, game] of visible.slice(0, 5).entries()) {
     const button = document.createElement("button");
     button.textContent = game.name;
+    button.id = `search-match-${index}`;
+    button.setAttribute("role", "option");
+    button.setAttribute("aria-selected", String(index === searchSuggestion));
+    button.tabIndex = -1;
+    if (index === searchSuggestion)
+      $("#search").setAttribute("aria-activedescendant", button.id);
     button.onclick = () => closeSearch(game.id);
     suggestions.append(button);
   }
@@ -765,13 +828,30 @@ window.addEventListener("keydown", (event) => {
     event.preventDefault();
     return;
   }
+  if (
+    searchExpanded &&
+    ["ArrowUp", "ArrowDown"].includes(event.key) &&
+    !event.metaKey &&
+    !event.ctrlKey &&
+    !event.altKey
+  ) {
+    event.preventDefault();
+    const count = Math.min(5, visible.length);
+    if (count) {
+      searchSuggestion =
+        (searchSuggestion + (event.key === "ArrowDown" ? 1 : -1) + count) %
+        count;
+      renderSearchSuggestions();
+    }
+    return;
+  }
   if (searchExpanded && event.key === "Enter") {
     event.preventDefault();
     if (!event.repeat) {
       const revision = searchRevision;
       searchWork.then(() => {
         if (searchExpanded && revision === searchRevision && visible.length)
-          closeSearch(visible[0].id);
+          closeSearch((visible[searchSuggestion] || visible[0]).id);
       });
     }
     return;
@@ -930,6 +1010,7 @@ document.addEventListener("visibilitychange", () =>
 $("#edit-custom").onclick = showCustomEditor;
 $("#search").addEventListener("input", (event) => {
   query = event.target.value;
+  searchSuggestion = 0;
   if (data.games.length <= 500 || workerFailed) {
     changeFilter();
     renderSearchSuggestions();
@@ -957,6 +1038,7 @@ $("#search").addEventListener("input", (event) => {
         lastPlayed,
       }),
     );
+    request.counts = [...startupCounts];
     workerHasData = true;
   }
   searchWorker.postMessage(request);
@@ -1001,6 +1083,72 @@ $("#page-form").onsubmit = (e) => {
   e.preventDefault();
   applyMetadata($("#metadata-page").value);
 };
+let backupWorking = false;
+async function backupOperation(command, path) {
+  if (backupWorking) throw new Error("Another backup operation is active.");
+  backupWorking = true;
+  closeDialogs();
+  const panel = document.createElement("section");
+  panel.className = "backup-activity";
+  panel.setAttribute("aria-live", "polite");
+  const label = document.createElement("p"),
+    progress = document.createElement("progress"),
+    cancel = document.createElement("button");
+  label.textContent =
+    command === "export_library"
+      ? "Backing up library and images…"
+      : command === "preview_backup"
+        ? "Verifying backup preview…"
+        : "Verifying and restoring backup…";
+  progress.max = 1;
+  progress.value = 0;
+  cancel.textContent = "Cancel";
+  cancel.onclick = () => {
+    invoke("cancel_backup").catch(() => {});
+    cancel.disabled = true;
+    label.textContent = "Cancelling…";
+  };
+  panel.append(label, progress, cancel);
+  $("#app").append(panel);
+  const timer = setInterval(async () => {
+    try {
+      const state = await invoke("backup_status");
+      if (state.active && !cancel.disabled) {
+        label.textContent = state.phase;
+        progress.max = state.total || 1;
+        progress.value = state.completed || 0;
+      }
+    } catch {}
+  }, 250);
+  try {
+    return await invoke(command, { path });
+  } finally {
+    clearInterval(timer);
+    panel.remove();
+    backupWorking = false;
+  }
+}
+$("#preview-backup").onclick = async () => {
+  try {
+    const path = await open({
+      title: "Preview backup",
+      filters: [{ name: "Joynite backup", extensions: ["zip"] }],
+      multiple: false,
+    });
+    if (path) {
+      const result = await backupOperation("preview_backup", path);
+      closeDialogs();
+      await message(
+        `Adds ${result.additions.length} games. Keeps all ${result.kept} existing records and edits. Available artwork hashes verified. No changes made.\n\n${result.additions.slice(0, 10).join("\n")}`,
+        { title: "Backup verified" },
+      );
+    }
+  } catch (error) {
+    if (String(error).toLowerCase().includes("cancelled"))
+      status("Backup preview cancelled.");
+    else report(error);
+  }
+};
 $("#export").onclick = async () => {
   try {
     const path = await save({
@@ -1009,12 +1157,14 @@ $("#export").onclick = async () => {
       filters: [{ name: "Library backup", extensions: ["zip"] }],
     });
     if (path) {
-      await invoke("export_library", { path });
+      await backupOperation("export_library", path);
       status("Library and artwork backed up.");
     }
     closeDialogs();
   } catch (e) {
-    report(e);
+    if (String(e).toLowerCase().includes("cancelled"))
+      status("Backup operation cancelled. Existing library kept.");
+    else report(e);
   }
 };
 $("#import").onclick = async () => {
@@ -1027,12 +1177,14 @@ $("#import").onclick = async () => {
       multiple: false,
     });
     if (path) {
-      snapshot(await invoke("import_library", { path }));
+      snapshot(await backupOperation("import_library", path));
       hydrate();
     }
     closeDialogs();
   } catch (e) {
-    report(e);
+    if (String(e).toLowerCase().includes("cancelled"))
+      status("Backup operation cancelled. Existing library kept.");
+    else report(e);
   }
 };
 window.addEventListener("resize", schedule);
@@ -1041,8 +1193,8 @@ window.addEventListener("beforeunload", () => {
   stopController();
 });
 async function startup() {
-  unlisten = await listen("library-updated", (event) =>
-    snapshot(event.payload),
+  unlisten = await listen("library-patched", (event) =>
+    patchLibrary(event.payload),
   );
   snapshot(await invoke("get_library"));
   if (data.error) {
@@ -1223,3 +1375,7 @@ for (const id of ["#support", "#settings-support"])
     invoke("open_page", { url: "https://ko-fi.com/joyarz" }).catch(report);
 
 startSoftwareUpdates($("#app"));
+
+window.addEventListener("focus", () => {
+  if (!$("#details").hidden) renderDetails();
+});

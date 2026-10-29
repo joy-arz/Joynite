@@ -4,6 +4,41 @@ import JoyniteCore
 import ZIPFoundation
 
 final class CoreTests {
+    func testLocalLaunchCountsAndHomeOrder() throws {
+        var games = (1...9).map { value -> Game in
+            var game = Game(id: String(value), name: "Game \(value)", store: .local, launchKind: .application, launchTarget: "/fixture/Game.app")
+            game.launchCount = UInt32(100 - value * 10); return game
+        }
+        let ring = HomeOrder.carousel(games)
+        XCTAssertEqual(ring.map(\.id), ["1", "3", "5", "6", "7", "8", "9", "4", "2"])
+        XCTAssertEqual([ring[ring.count-2].id, ring.last!.id, ring[0].id, ring[1].id, ring[2].id], ["4", "2", "1", "3", "5"])
+        let counts = Dictionary(games.map { ($0.id, $0.launchCount ?? 0) }, uniquingKeysWith: { _, last in last })
+        games[8].launchCount = 500
+        XCTAssertEqual(HomeOrder.carousel(games, counts: counts).first?.id, "1")
+        XCTAssertEqual(HomeOrder.carousel(games).first?.id, "9")
+        games[7].favorite = true
+        XCTAssertEqual(HomeOrder.carousel(games).first?.id, "8")
+        games[7].hidden = true
+        XCTAssertFalse(HomeOrder.carousel(games).contains { $0.id == "8" })
+        var legacy = Game(id: "legacy", name: "Legacy", store: .local, launchKind: .application, launchTarget: "/fixture")
+        legacy.lastPlayed = Date(); XCTAssertNil(legacy.launchCount)
+        let data = try JSONEncoder().encode(legacy)
+        legacy = try JSONDecoder().decode(Game.self, from: data); XCTAssertNil(legacy.launchCount)
+        legacy.recordLaunch(); XCTAssertEqual(legacy.launchCount, 1)
+        legacy.launchCount = UInt32.max; legacy.recordLaunch(); XCTAssertEqual(legacy.launchCount, UInt32.max)
+        try XCTAssertEqual(try JSONDecoder().decode(Game.self, from: JSONEncoder().encode(legacy)).launchCount, UInt32.max)
+        for count in 0...5 { XCTAssertEqual(HomeOrder.carousel(Array(games.prefix(count))).count, count) }
+    }
+    func testLaunchReportsStayLocalAndPreserveExitDetails() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let report = LaunchReport(state: "exited", detail: "Runtime ended", processID: 123, exitCode: 7, elapsedSeconds: 0.5)
+        try LaunchDiagnostics.write(report, root: root, gameID: "../game")
+        let loaded = LaunchDiagnostics.read(root: root, gameID: "../game")
+        XCTAssertEqual(loaded?.exitCode, 7); XCTAssertEqual(loaded?.processID, 123)
+        XCTAssertEqual(LaunchDiagnostics.file(root: root, gameID: "../game").deletingLastPathComponent(), root.appendingPathComponent("Logs"))
+        XCTAssertNil(LaunchDiagnostics.read(root: root, gameID: "other"))
+    }
     func testFuzzySearchAndPortableBackup() throws {
         let entry = GameSearch.Entry(name: "Inscryption")
         XCTAssertEqual(entry.score("INSCRYPTION"), 0)
@@ -15,6 +50,7 @@ final class CoreTests {
         defer { try? FileManager.default.removeItem(at: root) }
         let media = root.appendingPathComponent("source/Media")
         var game = Game(id: "backup-test", name: "Inscryption", store: .local, launchKind: .application, launchTarget: "/missing/Game.app")
+        game.launchCount = 42
         game.customArtwork = String(repeating: "a", count: 64) + ".png"
         game.metadataOverrides = ["summary": "Offline custom description"]
         let file = media.appendingPathComponent(MediaCache.identifier(game.id)).appendingPathComponent(game.customArtwork!)
@@ -22,8 +58,14 @@ final class CoreTests {
         let image = Data("portable artwork fixture".utf8); try image.write(to: file)
         let source = LibraryFile(games: [game]); let zip = root.appendingPathComponent("backup.zip")
         try LibraryBackup.export(source, media: media, to: zip)
+        let originalArchive = try Data(contentsOf: zip), progress = Progress(totalUnitCount: 1)
+        let observation = progress.observe(\.completedUnitCount, options: [.new]) { value, _ in if value.completedUnitCount >= 2 { value.cancel() } }
+        try withExtendedLifetime(observation) { XCTAssertThrowsError(try LibraryBackup.export(source, media: media, to: zip, progress: progress)) }
+        try XCTAssertEqual(Data(contentsOf: zip), originalArchive)
         let destination = root.appendingPathComponent("restored")
         let storage = LibraryStorage(url: destination.appendingPathComponent("library.json"))
+        let preview = try LibraryBackup.restore(zip, current: LibraryFile(), storage: storage, media: destination.appendingPathComponent("Media"), previewOnly: true)
+        XCTAssertEqual(preview.games.count, 1); XCTAssertFalse(FileManager.default.fileExists(atPath: storage.url.path))
         let restored = try LibraryBackup.restore(zip, current: LibraryFile(), storage: storage, media: destination.appendingPathComponent("Media"))
         XCTAssertEqual(restored.games, source.games)
         try XCTAssertEqual(try Data(contentsOf: destination.appendingPathComponent("Media/\(MediaCache.identifier(game.id))/\(game.customArtwork!)")), image)
@@ -393,6 +435,8 @@ private func XCTAssertThrowsError<T>(_ value: @autoclosure () throws -> T, line:
         }
         let suite = CoreTests()
         let tests: [(String, () throws -> Void)] = [
+            ("Local launch counts, startup center and stable session order", suite.testLocalLaunchCountsAndHomeOrder),
+            ("Local launch diagnostic report integrity", suite.testLaunchReportsStayLocalAndPreserveExitDetails),
             ("Backup traversal and altered-content rejection", suite.testBackupRejectsPathsAndChangedContent),
             ("Fuzzy search and portable offline backup", suite.testFuzzySearchAndPortableBackup),
             ("VDF nested objects, escaped paths, malformed input", suite.testVDFNestedPathsAndEscapes),

@@ -38,8 +38,8 @@ async fn hydrate_metadata(
 ) -> Result<Snapshot, String> {
     let state = state.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
-        state.hydrate(all, |snapshot| {
-            let _ = app.emit("library-updated", &snapshot);
+        state.hydrate(all, |patch| {
+            let _ = app.emit("library-patched", &patch);
         })?;
         state.snapshot()
     })
@@ -56,19 +56,36 @@ async fn launch_game(state: State<'_>, id: String) -> Result<Snapshot, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let (game, root) = {
             let store = state.store.lock().map_err(|e| e.to_string())?;
+            store.ensure_writable()?;
             (store.game(&id)?, store.root.clone())
         };
-        library::launch(&game, &root)?;
-        let mut store = state.store.lock().map_err(|e| e.to_string())?;
-        store.ensure_writable()?;
-        if let Some(game) = store.library.games.iter_mut().find(|g| g.id == id) {
-            game.last_played = Some(model::now())
+        if let Err(error) = library::launch(&game, &root) {
+            library::record_failed_launch(&game, &root, &error);
+            return Err(error);
         }
-        store.save()?;
+        let mut store = state.store.lock().map_err(|e| e.to_string())?;
+        store.record_launch(&id)?;
         Ok(store.snapshot())
     })
     .await
     .map_err(|e| e.to_string())?
+}
+#[tauri::command]
+fn launch_diagnostics(state: State<'_>, id: String) -> Result<serde_json::Value, String> {
+    let store = state.store.lock().map_err(|e| e.to_string())?;
+    store.game(&id)?;
+    let path = store
+        .root
+        .join("Logs")
+        .join(model::hash(&id) + ".launch.json");
+    if !path.exists() {
+        return Ok(serde_json::Value::Null);
+    }
+    if std::fs::metadata(&path).map_err(|e| e.to_string())?.len() > 65536 {
+        return Err("Diagnostic report is too large".into());
+    }
+    serde_json::from_slice(&std::fs::read(path).map_err(|e| e.to_string())?)
+        .map_err(|e| e.to_string())
 }
 #[tauri::command]
 async fn update_game(
@@ -224,9 +241,49 @@ fn open_page(url: String) -> Result<(), String> {
     library::open_uri(&url)
 }
 #[tauri::command]
+fn backup_status(state: State<'_>) -> backup::Status {
+    state.backup.status()
+}
+#[tauri::command]
+fn cancel_backup(state: State<'_>) {
+    state.backup.cancel();
+}
+#[tauri::command]
+async fn preview_backup(state: State<'_>, path: String) -> Result<serde_json::Value, String> {
+    let state = state.inner().clone();
+    let _operation = state.backup.begin("Verifying backup preview")?;
+    let worker = state.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let (current, root) = {
+            let store = worker.store.lock().map_err(|e| e.to_string())?;
+            (store.library.clone(), store.root.clone())
+        };
+        let next = backup::preview_controlled(
+            std::path::Path::new(&path),
+            &current,
+            &root,
+            Some(&worker.backup),
+        )?;
+        let ids: std::collections::BTreeSet<_> =
+            current.games.iter().map(|g| g.id.as_str()).collect();
+        let additions: Vec<_> = next
+            .games
+            .iter()
+            .filter(|g| !ids.contains(g.id.as_str()))
+            .map(|g| g.name.clone())
+            .collect();
+        Ok(serde_json::json!({"additions":additions,"kept":current.games.len()}))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+#[tauri::command]
 async fn export_library(state: State<'_>, path: String) -> Result<(), String> {
     let state = state.inner().clone();
+    let _operation = state.backup.begin("Backing up library and images")?;
+    let worker = state.clone();
     tauri::async_runtime::spawn_blocking(move || {
+        let state = worker;
         let path = PathBuf::from(path);
         let store = state.store.lock().map_err(|e| e.to_string())?;
         if path.extension().is_none_or(|e| e != "zip") {
@@ -235,7 +292,7 @@ async fn export_library(state: State<'_>, path: String) -> Result<(), String> {
         let library = store.library.clone();
         let root = store.root.clone();
         drop(store);
-        backup::export(&library, &root, &path)
+        backup::export_controlled(&library, &root, &path, Some(&state.backup))
     })
     .await
     .map_err(|e| e.to_string())?
@@ -243,12 +300,15 @@ async fn export_library(state: State<'_>, path: String) -> Result<(), String> {
 #[tauri::command]
 async fn import_library(state: State<'_>, path: String) -> Result<Snapshot, String> {
     let state = state.inner().clone();
+    let _operation = state.backup.begin("Verifying and restoring backup")?;
+    let worker = state.clone();
     tauri::async_runtime::spawn_blocking(move || {
+        let state = worker;
         let path = PathBuf::from(path);
         let mut store = state.store.lock().map_err(|e| e.to_string())?;
         store.ensure_writable()?;
         let next = if path.extension().is_some_and(|e| e == "zip") {
-            backup::restore(&path, &store.library, &store.root)?
+            backup::restore_controlled(&path, &store.library, &store.root, Some(&state.backup))?
         } else {
             let bytes = std::fs::read(path).map_err(|e| e.to_string())?;
             if bytes.len() > 25_000_000 {
@@ -268,6 +328,7 @@ async fn import_library(state: State<'_>, path: String) -> Result<Snapshot, Stri
                     next.games.push(game)
                 }
             }
+            state.backup.check()?;
             library::save_library(&store.root, &next)?;
             next
         };
@@ -387,6 +448,7 @@ fn main() {
                 app.asset_protocol_scope().allow_directory(media, true)?;
             }
             app.manage(Arc::new(AppState {
+                backup: backup::Control::default(),
                 store: Mutex::new(store),
                 cancel: AtomicBool::new(false),
             }));
@@ -399,6 +461,7 @@ fn main() {
             hydrate_metadata,
             cancel_metadata,
             launch_game,
+            launch_diagnostics,
             update_game,
             restore_hidden,
             add_folder,
@@ -409,6 +472,9 @@ fn main() {
             uninstall_plan,
             uninstall_game,
             open_page,
+            preview_backup,
+            backup_status,
+            cancel_backup,
             export_library,
             import_library,
             save_custom_metadata

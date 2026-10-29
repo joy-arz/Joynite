@@ -42,11 +42,17 @@ public struct Game: Identifiable, Codable, Equatable, Sendable {
     public var metadataSource = ""
     public var metadataUpdated: Date?
     public var favorite = false
+    public var launchCount: UInt32?
     public var lastPlayed: Date?
     public var addedAt = Date()
     public init(id: String, name: String, store: Store, launchKind: LaunchKind, launchTarget: String, installPath: String = "", storeID: String = "") {
         self.id = id; self.name = name; self.store = store; self.launchKind = launchKind
         self.launchTarget = launchTarget; self.installPath = installPath; self.storeID = storeID
+    }
+    public mutating func recordLaunch(at date: Date = Date()) {
+        let count = launchCount ?? 0
+        launchCount = count == UInt32.max ? count : count + 1
+        lastPlayed = date
     }
     public var metadataValues: [String: String] {
         ["name": name, "summary": summary, "developer": developer, "releaseDate": releaseDate, "genres": genres.joined(separator: ", "), "source": metadataSource]

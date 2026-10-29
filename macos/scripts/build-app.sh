@@ -5,6 +5,14 @@ cd "$MACOS_ROOT"
 swift build -c release --product Joynite
 BIN_DIR="$(swift build -c release --show-bin-path)"
 APP="$MACOS_ROOT/dist/Joynite.app"
+python3 - "$APP" <<'PYAPP'
+import pathlib, shutil, sys
+path = pathlib.Path(sys.argv[1])
+if path.name != "Joynite.app" or path.parent.name != "dist" or path.is_symlink():
+    raise SystemExit("Refusing to clean an unexpected build bundle")
+if path.exists():
+    shutil.rmtree(path)
+PYAPP
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$APP/Contents/Frameworks"
 ditto "$BIN_DIR/Sparkle.framework" "$APP/Contents/Frameworks/Sparkle.framework"
 ditto "$BIN_DIR/ZIPFoundation_ZIPFoundation.bundle" "$APP/Contents/Resources/ZIPFoundation_ZIPFoundation.bundle"

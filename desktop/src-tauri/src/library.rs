@@ -22,6 +22,7 @@ pub struct Store {
     pub revision: u64,
 }
 pub struct AppState {
+    pub backup: crate::backup::Control,
     pub store: Mutex<Store>,
     pub cancel: AtomicBool,
 }
@@ -122,52 +123,52 @@ impl Store {
         self.revision += 1;
         Ok(())
     }
+    pub fn view_game(&self, game: &Game) -> UiGame {
+        let file = |key: &Option<String>| {
+            metadata::cache_file(&self.root, game, key).map(|p| p.to_string_lossy().into_owned())
+        };
+        let mut images = Images {
+            portrait_fill: None,
+            landscape_fill: None,
+            background_fill: None,
+            portrait: file(&game.custom_artwork).or_else(|| file(&game.cached_artwork)),
+            landscape: file(&game.custom_landscape)
+                .or_else(|| file(&game.cached_landscape))
+                .or_else(|| file(&game.custom_artwork))
+                .or_else(|| file(&game.cached_artwork)),
+            background: file(&game.custom_background)
+                .or_else(|| file(&game.cached_background))
+                .or_else(|| file(&game.custom_landscape))
+                .or_else(|| file(&game.cached_landscape))
+                .or_else(|| file(&game.custom_artwork))
+                .or_else(|| file(&game.cached_artwork)),
+        };
+        images.portrait_fill = images
+            .portrait
+            .as_ref()
+            .and_then(|s| metadata::image_fill(Path::new(s)))
+            .map(|p| p.to_string_lossy().into_owned());
+        images.landscape_fill = images
+            .landscape
+            .as_ref()
+            .and_then(|s| metadata::image_fill(Path::new(s)))
+            .map(|p| p.to_string_lossy().into_owned());
+        images.background_fill = images
+            .background
+            .as_ref()
+            .and_then(|s| metadata::image_fill(Path::new(s)))
+            .map(|p| p.to_string_lossy().into_owned());
+        UiGame {
+            game: game.clone(),
+            images,
+        }
+    }
     pub fn snapshot(&self) -> Snapshot {
         let games = self
             .library
             .games
             .iter()
-            .map(|game| {
-                let file = |key: &Option<String>| {
-                    metadata::cache_file(&self.root, game, key)
-                        .map(|p| p.to_string_lossy().into_owned())
-                };
-                let mut images = Images {
-                    portrait_fill: None,
-                    landscape_fill: None,
-                    background_fill: None,
-                    portrait: file(&game.custom_artwork).or_else(|| file(&game.cached_artwork)),
-                    landscape: file(&game.custom_landscape)
-                        .or_else(|| file(&game.cached_landscape))
-                        .or_else(|| file(&game.custom_artwork))
-                        .or_else(|| file(&game.cached_artwork)),
-                    background: file(&game.custom_background)
-                        .or_else(|| file(&game.cached_background))
-                        .or_else(|| file(&game.custom_landscape))
-                        .or_else(|| file(&game.cached_landscape))
-                        .or_else(|| file(&game.custom_artwork))
-                        .or_else(|| file(&game.cached_artwork)),
-                };
-                images.portrait_fill = images
-                    .portrait
-                    .as_ref()
-                    .and_then(|s| metadata::image_fill(Path::new(s)))
-                    .map(|p| p.to_string_lossy().into_owned());
-                images.landscape_fill = images
-                    .landscape
-                    .as_ref()
-                    .and_then(|s| metadata::image_fill(Path::new(s)))
-                    .map(|p| p.to_string_lossy().into_owned());
-                images.background_fill = images
-                    .background
-                    .as_ref()
-                    .and_then(|s| metadata::image_fill(Path::new(s)))
-                    .map(|p| p.to_string_lossy().into_owned());
-                UiGame {
-                    game: game.clone(),
-                    images,
-                }
-            })
+            .map(|game| self.view_game(game))
             .collect();
         Snapshot {
             games,
@@ -177,6 +178,19 @@ impl Store {
             platform: std::env::consts::OS.into(),
             revision: self.revision,
         }
+    }
+    pub fn record_launch(&mut self, id: &str) -> Result<(), String> {
+        self.ensure_writable()?;
+        let mut next = self.library.clone();
+        next.games
+            .iter_mut()
+            .find(|g| g.id == id)
+            .ok_or("Game no longer exists")?
+            .record_launch();
+        save_library(&self.root, &next)?;
+        self.library = next;
+        self.revision += 1;
+        Ok(())
     }
     pub fn game(&self, id: &str) -> Result<Game, String> {
         self.library
@@ -407,12 +421,83 @@ fn compatibility(game: &Game, uninstall: bool, root: &Path) -> Result<(), String
         .stdin(Stdio::null())
         .stdout(log)
         .stderr(error_log);
-    spawn_reaped(&mut command)?;
+    spawn_tracked(&mut command, root, &game.id)?;
     Ok(())
+}
+fn diagnostic(
+    root: &Path,
+    id: &str,
+    state: &str,
+    detail: &str,
+    pid: Option<u32>,
+    exit_code: Option<i32>,
+    elapsed: Option<f64>,
+) {
+    let logs = root.join("Logs");
+    if fs::create_dir_all(&logs).is_err() {
+        return;
+    }
+    let path = logs.join(hash(id) + ".launch.json");
+    if state == "exited" {
+        if let Ok(bytes) = fs::read(&path) {
+            if let Ok(report) = serde_json::from_slice::<serde_json::Value>(&bytes) {
+                if report["processID"].as_u64() != pid.map(u64::from) {
+                    return;
+                }
+            }
+        }
+    }
+    let temporary = logs.join(hash(id) + ".launch.tmp");
+    let value = serde_json::json!({"state":state,"detail":detail,"processID":pid,"exitCode":exit_code,"elapsedSeconds":elapsed,"timestamp":crate::model::now()});
+    if let Ok(bytes) = serde_json::to_vec(&value) {
+        if fs::write(&temporary, bytes).is_ok() {
+            let _ = fs::rename(temporary, path);
+        }
+    }
+}
+fn spawn_tracked(command: &mut Command, root: &Path, id: &str) -> Result<(), String> {
+    command.stdin(Stdio::null());
+    let mut child = command.spawn().map_err(|e| e.to_string())?;
+    let pid = child.id();
+    diagnostic(
+        root,
+        id,
+        "accepted",
+        "Joynite started the process. Game-menu arrival is not verified.",
+        Some(pid),
+        None,
+        None,
+    );
+    let root = root.to_path_buf();
+    let id = id.to_owned();
+    let start = std::time::Instant::now();
+    std::thread::spawn(move || {
+        if let Ok(status) = child.wait() {
+            diagnostic(
+                &root,
+                &id,
+                "exited",
+                if start.elapsed().as_secs() < 5 {
+                    "Process exited early. This may be a launcher handoff; inspect the runtime/client for errors."
+                } else {
+                    "Process exited. Game-menu arrival was not verified."
+                },
+                Some(pid),
+                status.code(),
+                Some(start.elapsed().as_secs_f64()),
+            );
+        }
+    });
+    Ok(())
+}
+pub fn record_failed_launch(game: &Game, root: &Path, error: &str) {
+    diagnostic(root, &game.id, "failed", error, None, None, None);
 }
 pub fn launch(game: &Game, root: &Path) -> Result<(), String> {
     if game.launch_kind == "store" {
-        return open_uri(&game.launch_target);
+        open_uri(&game.launch_target)?;
+        diagnostic(root,&game.id,"accepted","A store launch request was handed to the operating system. Complete client prompts; game-menu arrival is not verified.",None,None,None);
+        return Ok(());
     }
     if game.launch_kind == "compatibility" {
         return compatibility(game, false, root);
@@ -452,7 +537,7 @@ pub fn launch(game: &Game, root: &Path) -> Result<(), String> {
         }
         Command::new(path)
     };
-    spawn_reaped(&mut command)?;
+    spawn_tracked(&mut command, root, &game.id)?;
     Ok(())
 }
 #[derive(Serialize)]
@@ -595,11 +680,34 @@ pub fn enrich(state: &AppState, id: &str, source: Option<&str>) -> Result<(), St
     }
     Ok(())
 }
+#[derive(Serialize)]
+pub struct LibraryPatch {
+    pub games: Vec<UiGame>,
+    pub notices: Vec<String>,
+    pub revision: u64,
+}
 impl AppState {
     pub fn snapshot(&self) -> Result<Snapshot, String> {
         Ok(self.store.lock().map_err(|e| e.to_string())?.snapshot())
     }
-    pub fn hydrate(&self, all: bool, notify: impl Fn(Snapshot)) -> Result<(), String> {
+    fn patch(&self, id: &str, cursor: &mut usize) -> Result<LibraryPatch, String> {
+        let store = self.store.lock().map_err(|e| e.to_string())?;
+        let games = store
+            .library
+            .games
+            .iter()
+            .find(|g| g.id == id)
+            .map(|g| vec![store.view_game(g)])
+            .unwrap_or_default();
+        let notices = store.notices[(*cursor).min(store.notices.len())..].to_vec();
+        *cursor = store.notices.len();
+        Ok(LibraryPatch {
+            games,
+            notices,
+            revision: store.revision,
+        })
+    }
+    pub fn hydrate(&self, all: bool, notify: impl Fn(LibraryPatch)) -> Result<(), String> {
         self.cancel.store(false, Ordering::Relaxed);
         let ids: Vec<_> = {
             let store = self.store.lock().map_err(|e| e.to_string())?;
@@ -611,6 +719,7 @@ impl AppState {
                 .map(|g| g.id.clone())
                 .collect()
         };
+        let mut notice_cursor = self.store.lock().map_err(|e| e.to_string())?.notices.len();
         for id in ids {
             if self.cancel.load(Ordering::Relaxed) {
                 break;
@@ -619,8 +728,8 @@ impl AppState {
                 let mut store = self.store.lock().map_err(|e| e.to_string())?;
                 store.notices.push(error)
             }
-            if let Ok(snapshot) = self.snapshot() {
-                notify(snapshot)
+            if let Ok(patch) = self.patch(&id, &mut notice_cursor) {
+                notify(patch)
             }
             std::thread::sleep(std::time::Duration::from_millis(250))
         }
@@ -648,8 +757,8 @@ impl AppState {
                     if changed {
                         store.save()?;
                         drop(store);
-                        if let Ok(snapshot) = self.snapshot() {
-                            notify(snapshot)
+                        if let Ok(patch) = self.patch(&game.id, &mut notice_cursor) {
+                            notify(patch)
                         }
                     }
                 }
@@ -771,5 +880,77 @@ mod performance_tests {
             save_library(root.path(), &store.library).unwrap();
             println!("BENCH shared count={count} snapshot_ms={snapshot_ms:.2} serialize_ms={json_ms:.2} save_ms={:.2} bytes={}",start.elapsed().as_secs_f64()*1000.0,bytes.len());
         }
+    }
+}
+#[cfg(test)]
+mod launch_and_patch_tests {
+    use super::*;
+    #[test]
+    fn accepted_launch_counts_commit_atomically_and_failed_paths_do_not_count() {
+        let root = tempfile::tempdir().unwrap();
+        let game = Game {
+            id: "counter".into(),
+            name: "Counter".into(),
+            launch_target: root.path().join("missing").to_string_lossy().into_owned(),
+            ..Default::default()
+        };
+        let mut store = Store {
+            library: Library {
+                games: vec![game.clone()],
+                ..Default::default()
+            },
+            root: root.path().to_path_buf(),
+            error: None,
+            notices: vec![],
+            revision: 1,
+        };
+        assert!(launch(&game, root.path()).is_err());
+        assert_eq!(store.library.games[0].launch_count, 0);
+        store.record_launch("counter").unwrap();
+        assert_eq!(store.library.games[0].launch_count, 1);
+        let disk: Library =
+            serde_json::from_slice(&fs::read(root.path().join("library.json")).unwrap()).unwrap();
+        assert_eq!(disk.games[0].launch_count, 1);
+        let blocked = root.path().join("blocked");
+        fs::write(&blocked, b"file").unwrap();
+        store.root = blocked;
+        assert!(store.record_launch("counter").is_err());
+        assert_eq!(store.library.games[0].launch_count, 1);
+    }
+    #[test]
+    fn metadata_patch_contains_one_record_at_large_library_scale() {
+        let root = tempfile::tempdir().unwrap();
+        let state = AppState {
+            backup: Default::default(),
+            cancel: AtomicBool::new(false),
+            store: Mutex::new(Store {
+                root: root.path().to_path_buf(),
+                library: Library {
+                    games: (0..10000)
+                        .map(|i| Game {
+                            id: i.to_string(),
+                            name: format!("Game {i}"),
+                            ..Default::default()
+                        })
+                        .collect(),
+                    ..Default::default()
+                },
+                error: None,
+                notices: vec!["one notice".into()],
+                revision: 12,
+            }),
+        };
+        let mut cursor = 0;
+        let patch = state.patch("25", &mut cursor).unwrap();
+        assert_eq!(patch.games.len(), 1);
+        assert_eq!(patch.games[0].game.id, "25");
+        assert_eq!(patch.notices.len(), 1);
+        assert!(serde_json::to_vec(&patch).unwrap().len() < 3000);
+        assert!(state
+            .patch("removed", &mut cursor)
+            .unwrap()
+            .games
+            .is_empty());
+        assert_eq!(cursor, 1);
     }
 }

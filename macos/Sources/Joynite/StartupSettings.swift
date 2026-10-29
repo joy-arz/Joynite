@@ -43,6 +43,9 @@ struct JoyniteSettingsView: View {
             Text(updater.lastCheck).font(.callout).foregroundStyle(.secondary)
             Button("Check for updates…") { Task { await updater.check(manual: true) } }
             Divider()
+            Text("Library order").font(.headline)
+            Text("Favorites first, then opens made through Joynite. Counts stay local and start at zero for older libraries.").font(.callout).foregroundStyle(.secondary)
+            Divider()
             KofiSupportButton()
         }.padding(28).frame(width: 480).tint(Palette.accent).preferredColorScheme(.dark)
             .onChange(of: phase) { _, value in if value == .active { startup.refresh() } }
