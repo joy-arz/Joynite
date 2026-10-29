@@ -1,14 +1,15 @@
 name: Cross-platform carousel
 on:
   push:
-    paths: ['branding/**', 'desktop/**', 'updates/**', '.github/workflows/desktop.yml']
+    paths: ['branding/**', 'macos/**', 'desktop/**', 'scripts/**', 'updates/**', '.github/workflows/**']
   pull_request:
-    paths: ['branding/**', 'desktop/**', 'updates/**', '.github/workflows/desktop.yml']
+    paths: ['branding/**', 'macos/**', 'desktop/**', 'scripts/**', 'updates/**', '.github/workflows/**']
   workflow_dispatch:
 permissions:
   contents: read
 jobs:
   desktop:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
     strategy:
       fail-fast: false
       matrix:

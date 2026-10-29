@@ -1,14 +1,15 @@
 name: macOS native build
 on:
   push:
-    paths: ['branding/**', 'macos/**', 'scripts/**', 'updates/**', '.github/workflows/macos.yml']
+    paths: ['branding/**', 'macos/**', 'desktop/**', 'scripts/**', 'updates/**', '.github/workflows/**']
   pull_request:
-    paths: ['branding/**', 'macos/**', 'scripts/**', 'updates/**', '.github/workflows/macos.yml']
+    paths: ['branding/**', 'macos/**', 'desktop/**', 'scripts/**', 'updates/**', '.github/workflows/**']
   workflow_dispatch:
 permissions:
   contents: read
 jobs:
   build:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
     runs-on: macos-15
     env:
       JOYNITE_SPARKLE_PRIVATE_KEY: ${{ secrets.JOYNITE_SPARKLE_PRIVATE_KEY }}
