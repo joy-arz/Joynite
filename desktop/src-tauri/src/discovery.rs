@@ -414,17 +414,12 @@ pub fn scan(home: &Path, folders: &[String]) -> Scan {
         }
         scan_apps(root, 0, true, &mut out, &mut prefixes);
         for path in entries(root) {
-            if path
-                .extension()
-                .is_some_and(|e| e.eq_ignore_ascii_case("exe") || e == "AppImage")
-            {
+            if path.extension().is_some_and(|e| {
+                e.eq_ignore_ascii_case("exe") || e.eq_ignore_ascii_case("lnk") || e == "AppImage"
+            }) {
                 out.games.push(Game {
                     id: format!("file:{}", path.display()),
-                    name: path
-                        .file_stem()
-                        .unwrap_or_default()
-                        .to_string_lossy()
-                        .into(),
+                    name: crate::launch_plan::display_title(&path),
                     launch_kind: "executable".into(),
                     launch_target: path.to_string_lossy().into(),
                     install_path: path.to_string_lossy().into(),

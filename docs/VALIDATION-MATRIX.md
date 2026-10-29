@@ -24,3 +24,7 @@ Reproduce scale profiles with `swift run --package-path macos -c release Joynite
 
 - Version 0.7 shared macOS CI package: a copied offline library displayed favorite Inscryption in the center, with ranks 4/2/1/3/5 across the five cards after restart. The Mac locked during the remaining shared keyboard check; that check was not completed.
 - Version 0.7 automated validation: 268 native assertions without live-provider checks, 22 Rust tests, 16 frontend tests, and 3 update-feed tests. Native macOS and shared Windows/Linux/macOS CI packages built successfully from commit 3a1debb5.
+
+## Version 0.7.1 Windows recovery
+
+Supplied screenshots show error 740 for Clair Obscur and error 5 for VALORANT in 0.7.0. Live official-provider validation finds Clair Obscur from `Expedition33-Win64-Shipping` and VALORANT from `VALORANT-Win64-Shipping`. Fixtures cover unique subtitle matching, ambiguity rejection, preserved custom overrides/launch counts, and registered/neighboring Riot Client routing. Windows CI exercises Unicode/null validation and a rejected missing-executable shell launch. Real game/UAC/Vanguard behavior requires retesting on the affected Windows device.

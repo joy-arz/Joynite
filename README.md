@@ -10,7 +10,7 @@ Joynite is a redesigned, lightweight game library and launcher with a black-and-
 
 ![Joynite carousel with Inscryption selected in the center](docs/screenshots/joynite-carousel.png)
 
-Five cards wrap continuously. The selected game is largest and centered, with its title and description inside the card. Interruptible sliding follows rapid input. Separate portrait covers, inspection images, and alternate backgrounds fit completely over a matching softened fill.
+Five cards wrap continuously. The selected game is largest and centered, with its title and description inside the card. Interruptible sliding follows rapid input. Portrait covers and inspection images fit completely over a matching softened fill. Alternate backgrounds cover the full application viewport.
 
 ![Joynite showing Inscryption artwork and saved metadata](docs/screenshots/joynite-inscryption-details.png)
 

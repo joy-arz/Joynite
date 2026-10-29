@@ -81,3 +81,11 @@ Joynite records successful launch requests locally as launchCount. It never quer
 Search supports Up/Down suggestion selection and uses fuzzy results only when direct matches are absent. Metadata hydration emits changed-record patches instead of a complete snapshot per game; stale patches cannot resurrect deleted records. Complete snapshots remain for initial load and explicit library operations.
 
 Backup progress/cancel controls run independently of the library mutex. Cancellation before the restore commit rolls back newly copied artwork. **Preview backup** verifies a ZIP and reports added/kept games without applying it. Destination write permissions and cross-machine game paths can still differ. Launch details read a small local report for processes/handoffs initiated by Joynite; no external game-usage history feeds the ranking.
+
+## Windows launch recovery (0.7.1)
+
+Add the game's working desktop **.lnk shortcut** when a client needs launch arguments (Riot, anti-cheat, or another launcher). Joynite preserves the shortcut's target, arguments and working directory through the Windows shell. Direct executables also use the shell and their installation directory. Windows can request permission when the target requires it; canceling that prompt does not count a launch. Joynite itself does not need to run as administrator.
+
+VALORANT executables are routed through the installed Riot Client using its registered live-client path or a neighboring Riot Client installation. If the client is unavailable, Joynite asks for its working shortcut instead of starting the protected binary. Access denied can also mean a broken installation or file permissions; the launcher cannot establish which from error 5 alone.
+
+Automatic lookup cleans packaged filenames such as `Expedition33-Win64-Shipping`, accepts a unique exact subtitle match (`Clair Obscur: Expedition 33`), and rejects ambiguous editions/sequels. Custom metadata is retained. Incomplete entries retry automatically; adding games while a metadata pass is running queues another pass. **Refresh metadata** retries existing complete entries manually. Backgrounds cover the full application viewport; the Windows title bar and taskbar remain managed by Windows.

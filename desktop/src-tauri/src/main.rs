@@ -1,10 +1,13 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 mod backup;
 mod discovery;
+mod launch_plan;
 mod library;
 mod metadata;
 mod model;
 mod vdf;
+#[cfg(windows)]
+mod windows_launch;
 use library::{AppState, Snapshot, Store};
 use model::Game;
 use std::{
@@ -152,8 +155,8 @@ async fn add_game(state: State<'_>, path: String) -> Result<Snapshot, String> {
         .unwrap_or_default()
         .to_string_lossy()
         .to_lowercase();
-    if !["app", "exe", "appimage", "desktop"].contains(&extension.as_str()) {
-        return Err("Choose a .app, .exe, .AppImage, or .desktop game".into());
+    if !["app", "exe", "lnk", "appimage", "desktop"].contains(&extension.as_str()) {
+        return Err("Choose a .app, .exe, .lnk, .AppImage, or .desktop game".into());
     }
     let target = path.to_string_lossy().into_owned();
     let kind = if extension == "app" {
@@ -168,11 +171,7 @@ async fn add_game(state: State<'_>, path: String) -> Result<Snapshot, String> {
             "{}:{target}",
             if extension == "app" { "app" } else { "file" }
         ),
-        name: path
-            .file_stem()
-            .unwrap_or_default()
-            .to_string_lossy()
-            .replace('_', " "),
+        name: launch_plan::display_title(&path),
         launch_kind: kind.into(),
         launch_target: target.clone(),
         install_path: target,

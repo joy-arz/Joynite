@@ -2044,7 +2044,7 @@ dependencies = [
 
 [[package]]
 name = "joynite"
-version = "0.7.0"
+version = "0.7.1"
 dependencies = [
  "dirs 6.0.0",
  "image",
@@ -2063,6 +2063,7 @@ dependencies = [
  "tauri-plugin-updater",
  "tempfile",
  "trash",
+ "windows-sys 0.61.2",
  "zip 2.6.1",
 ]
 

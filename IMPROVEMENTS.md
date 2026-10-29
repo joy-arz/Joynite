@@ -45,3 +45,12 @@ Version 0.6 validation: 181 native assertions with live providers / 171 without 
 - Native packaging removes only its generated dist/Joynite.app before building, preventing read-only dependency licenses or stale files from breaking repeated builds. A structured version helper updates only app-version fields, retaining dependency pins.
 
 Apple Developer ID/notarization, physical-controller coverage, real Windows/Linux installation recovery and deliberate disk-full/authorization exercises still need external credentials/devices or an isolated test environment. Full-library disk saves remain a separate measured future optimization.
+
+## Windows recovery fixes in 0.7.1
+
+- Replaced direct Windows CreateProcess launches with ShellExecuteExW on an owned STA thread. Windows controls elevation; shortcuts retain their arguments/working directories, and canceled or rejected requests do not increment counts. Protocol opens also use the shell, avoiding a detached rundll32 success result.
+- Routed protected VALORANT executables through Riot Client; missing-client errors direct users to a working .lnk shortcut. Error 5 still requires real-device diagnosis for permissions or broken client installations.
+- Fixed background CSS contain/cover specificity so artwork covers the viewport.
+- Automatic metadata cleans packaged executable titles, supports unambiguous subtitle matches, retries incomplete entries, and queues additions made during an active metadata pass. Explicit custom overrides remain authoritative.
+
+The supplied Windows screenshots establish failures in 0.7.0. The fix requires a real-device retest with those games; successful compilation and fixtures do not verify UAC acceptance, Riot authentication, Vanguard, or game-menu arrival.

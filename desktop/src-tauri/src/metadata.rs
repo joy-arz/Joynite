@@ -57,6 +57,14 @@ impl Details {
             .automatic_metadata
             .clone()
             .unwrap_or_else(|| game.metadata_values());
+        if !self.name.is_empty()
+            && normalized(&game.name)
+                == normalized(&crate::launch_plan::display_title(Path::new(
+                    &game.launch_target,
+                )))
+        {
+            automatic.insert("name".into(), self.name.clone());
+        }
         if !self.summary.is_empty() {
             automatic.insert("summary".into(), self.summary.clone());
         }
@@ -107,6 +115,50 @@ pub fn allowed(host: &str) -> bool {
                 .is_some_and(|domain| host == domain || host.ends_with(&format!(".{domain}")))
         })
 }
+fn match_key(title: &str) -> String {
+    normalized(
+        &title
+            .replace(['é', 'è', 'ê', 'ë'], "e")
+            .replace(['á', 'à', 'â', 'ä'], "a")
+            .replace(['ö', 'ô'], "o")
+            .replace(['ü', 'û'], "u"),
+    )
+}
+fn steam_match(items: &Value, query: &str) -> Option<u64> {
+    let items = items.as_array()?;
+    let key = match_key(query);
+    if key.is_empty() {
+        return None;
+    }
+    let exact: Vec<_> = items
+        .iter()
+        .filter(|i| match_key(i["name"].as_str().unwrap_or("")) == key)
+        .collect();
+    if exact.len() == 1 {
+        return exact[0]["id"].as_u64();
+    }
+    if !exact.is_empty() || key.len() < 8 || query.split_whitespace().count() < 2 {
+        return None;
+    }
+    // A unique subtitle match handles packaged names such as Expedition33.
+    // Ambiguous editions/sequels remain manual; never choose the first result.
+    let suffix: Vec<_> = items
+        .iter()
+        .filter(|i| {
+            let name = i["name"].as_str().unwrap_or("");
+            let words: Vec<_> = name
+                .split(|c: char| !c.is_alphanumeric())
+                .filter(|s| !s.is_empty())
+                .collect();
+            (0..words.len()).any(|index| match_key(&words[index..].join(" ")) == key)
+        })
+        .collect();
+    if suffix.len() == 1 {
+        suffix[0]["id"].as_u64()
+    } else {
+        None
+    }
+}
 pub struct Client {
     http: reqwest::blocking::Client,
 }
@@ -115,7 +167,11 @@ impl Client {
         Ok(Self {
             http: reqwest::blocking::Client::builder()
                 .timeout(std::time::Duration::from_secs(18))
-                .user_agent("Joynite/0.4 (+https://github.com/joy-arz/Joynite)")
+                .user_agent(concat!(
+                    "Joynite/",
+                    env!("CARGO_PKG_VERSION"),
+                    " (+https://github.com/joy-arz/Joynite)"
+                ))
                 .redirect(reqwest::redirect::Policy::limited(3))
                 .build()
                 .map_err(|e| e.to_string())?,
@@ -195,7 +251,7 @@ impl Client {
         parse_html(&html, url)
     }
     pub fn automatic(&self, game: &Game) -> Result<Details, String> {
-        if let Some(entry) = publisher(&game.name) {
+        if let Some(entry) = publisher(&crate::launch_plan::clean_title(&game.name)) {
             let mut data = Details {
                 name: entry.name,
                 summary: entry.summary,
@@ -221,21 +277,13 @@ impl Client {
             return self.steam(&game.store_id);
         }
         if !game.store_url.is_empty() {
-            return self.page(&game.store_url);
+            if let Ok(details) = self.page(&game.store_url) {
+                return Ok(details);
+            }
         }
-        let items = self.search(&game.name)?;
-        let exact: Vec<_> = items
-            .as_array()
-            .map(|a| {
-                a.iter()
-                    .filter(|i| {
-                        normalized(i["name"].as_str().unwrap_or("")) == normalized(&game.name)
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
-        if exact.len() == 1 {
-            if let Some(id) = exact[0]["id"].as_u64() {
+        let query = crate::launch_plan::clean_title(&game.name);
+        if let Ok(items) = self.search(&query) {
+            if let Some(id) = steam_match(&items, &query) {
                 return self.steam(&id.to_string());
             }
         }
@@ -708,4 +756,93 @@ pub fn image_fill(path: &Path) -> Option<std::path::PathBuf> {
     let softened = image::imageops::blur(&source, 5.0);
     softened.save(&target).ok()?;
     Some(target)
+}
+
+#[cfg(test)]
+mod automatic_matching_tests {
+    use super::*;
+    #[test]
+    fn exact_match_wins_and_unique_subtitle_matches_packaged_executable() {
+        let items = serde_json::json!([{"id": 1903340, "name": "Clair Obscur: Expedition 33"}]);
+        assert_eq!(
+            steam_match(
+                &items,
+                &crate::launch_plan::clean_title("Expedition33-Win64-Shipping")
+            ),
+            Some(1903340)
+        );
+        assert_eq!(
+            steam_match(&items, "Clair Obscur: Expedition 33"),
+            Some(1903340)
+        );
+        assert_eq!(steam_match(&items, "Expedition 3"), None);
+        assert_eq!(
+            steam_match(
+                &serde_json::json!([{"id": 1, "name": "Game: Expedition 33"}, {"id": 2, "name": "Other: Expedition 33"}]),
+                "Expedition 33"
+            ),
+            None
+        );
+        assert_eq!(
+            steam_match(&serde_json::json!([{"id": 1, "name": "Hades II"}]), "Hades"),
+            None
+        );
+        assert_eq!(
+            steam_match(
+                &serde_json::json!([{"id": 1, "name": "Pokémon"}]),
+                "Pokemon"
+            ),
+            Some(1)
+        );
+    }
+    #[test]
+    fn provider_canonical_title_preserves_user_override_and_launch_identity() {
+        let mut game = Game {
+            name: "Expedition 33".into(),
+            launch_target: "/Games/Expedition33-Win64-Shipping.exe".into(),
+            launch_count: 7,
+            ..Default::default()
+        };
+        let details = Details {
+            name: "Clair Obscur: Expedition 33".into(),
+            summary: "A summary".into(),
+            ..Default::default()
+        };
+        details.apply(&mut game);
+        assert_eq!(game.name, "Clair Obscur: Expedition 33");
+        assert_eq!(game.launch_count, 7);
+        let target = game.launch_target.clone();
+        game.metadata_overrides = Some(std::collections::BTreeMap::from([(
+            "name".into(),
+            "My custom title".into(),
+        )]));
+        details.apply(&mut game);
+        assert_eq!(game.name, "My custom title");
+        assert_eq!(game.launch_target, target);
+    }
+}
+
+#[cfg(test)]
+mod live_automatic_tests {
+    use super::*;
+    #[test]
+    #[ignore = "contacts live official metadata providers"]
+    fn packaged_windows_titles_find_automatic_metadata() {
+        let client = Client::new().unwrap();
+        let game = Game {
+            name: "Expedition33-Win64-Shipping".into(),
+            ..Default::default()
+        };
+        let details = client.automatic(&game).unwrap();
+        assert_eq!(details.name, "Clair Obscur: Expedition 33");
+        assert!(!details.summary.is_empty());
+        assert!(details.url.contains("1903340"));
+        let game = Game {
+            name: "VALORANT-Win64-Shipping".into(),
+            ..Default::default()
+        };
+        let details = client.automatic(&game).unwrap();
+        assert_eq!(details.name, "VALORANT");
+        assert_eq!(details.developer, "Riot Games");
+    }
 }

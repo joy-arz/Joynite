@@ -338,19 +338,18 @@ pub fn open_uri(url: &str) -> Result<(), String> {
         c
     };
     #[cfg(target_os = "windows")]
-    let mut cmd = {
-        let mut c = Command::new("rundll32.exe");
-        c.args(["url.dll,FileProtocolHandler", url]);
-        c
-    };
+    return crate::windows_launch::open(std::ffi::OsStr::new(url), "", None);
     #[cfg(target_os = "linux")]
     let mut cmd = {
         let mut c = Command::new("xdg-open");
         c.arg(url);
         c
     };
-    spawn_reaped(&mut cmd)?;
-    Ok(())
+    #[cfg(not(windows))]
+    {
+        spawn_reaped(&mut cmd)?;
+        Ok(())
+    }
 }
 fn compatibility(game: &Game, uninstall: bool, root: &Path) -> Result<(), String> {
     let plan = game
@@ -506,6 +505,28 @@ pub fn launch(game: &Game, root: &Path) -> Result<(), String> {
     if !path.exists() {
         return Err("Game path is missing. Reconnect its disk or add its new location.".into());
     }
+    #[cfg(windows)]
+    {
+        if !path.is_file()
+            || !path
+                .extension()
+                .is_some_and(|e| e.eq_ignore_ascii_case("exe") || e.eq_ignore_ascii_case("lnk"))
+        {
+            return Err("Choose a Windows game executable or its working .lnk shortcut".into());
+        }
+        let data = PathBuf::from(
+            std::env::var("PROGRAMDATA").unwrap_or_else(|_| r"C:\ProgramData".into()),
+        );
+        let plan = crate::launch_plan::riot_target(path, &data)?;
+        let (target, arguments) = plan
+            .as_ref()
+            .map(|(p, a)| (p.as_path(), a.as_str()))
+            .unwrap_or((path, ""));
+        crate::windows_launch::open(target.as_os_str(), arguments, target.parent())?;
+        diagnostic(root, &game.id, "accepted", "Windows shell accepted the launch. Client prompts and game-menu arrival remain unverified.", None, None, None);
+        return Ok(());
+    }
+    #[cfg(not(windows))]
     let mut command = if path.extension().is_some_and(|e| e == "app") {
         #[cfg(target_os = "macos")]
         {
@@ -537,8 +558,14 @@ pub fn launch(game: &Game, root: &Path) -> Result<(), String> {
         }
         Command::new(path)
     };
-    spawn_tracked(&mut command, root, &game.id)?;
-    Ok(())
+    #[cfg(not(windows))]
+    {
+        if let Some(parent) = path.parent() {
+            command.current_dir(parent);
+        }
+        spawn_tracked(&mut command, root, &game.id)?;
+        Ok(())
+    }
 }
 #[derive(Serialize)]
 pub struct UninstallPlan {
@@ -715,7 +742,10 @@ impl AppState {
                 .library
                 .games
                 .iter()
-                .filter(|g| all || g.metadata_updated.is_none())
+                .filter(|g| {
+                    all || g.metadata_updated.is_none()
+                        || (g.summary.is_empty() && g.developer.is_empty())
+                })
                 .map(|g| g.id.clone())
                 .collect()
         };

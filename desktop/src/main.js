@@ -73,6 +73,8 @@ searchWorker.onmessage = ({ data: result }) => {
 let busy = false,
   scanPending = null,
   hydratePending = null,
+  hydrateQueued = false,
+  hydrateQueuedAll = false,
   bgTimer = 0,
   bgIndex = 0,
   lastBg = "",
@@ -519,7 +521,11 @@ async function scan() {
   return scanPending;
 }
 async function hydrate(all = false) {
-  if (hydratePending) return hydratePending;
+  if (hydratePending) {
+    hydrateQueued = true;
+    hydrateQueuedAll ||= all;
+    return hydratePending;
+  }
   busy = true;
   $("#cancel").hidden = false;
   status("Fetching missing metadata and caching artwork…");
@@ -531,6 +537,12 @@ async function hydrate(all = false) {
       busy = false;
       $("#cancel").hidden = true;
       hydratePending = null;
+      if (hydrateQueued) {
+        const refreshAll = hydrateQueuedAll;
+        hydrateQueued = false;
+        hydrateQueuedAll = false;
+        hydrate(refreshAll);
+      }
     });
   return hydratePending;
 }
@@ -544,7 +556,7 @@ async function addGame() {
       data.platform === "macos"
         ? [{ name: "Mac game", extensions: ["app"] }]
         : data.platform === "windows"
-          ? [{ name: "Windows game", extensions: ["exe"] }]
+          ? [{ name: "Windows game", extensions: ["exe", "lnk"] }]
           : [{ name: "Linux game", extensions: ["AppImage", "desktop"] }],
   });
   if (path) {

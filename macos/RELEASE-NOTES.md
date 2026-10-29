@@ -1,3 +1,7 @@
+## 0.7.1
+
+Windows launch recovery: shell/shortcut handoffs and Riot Client routing. Shared backgrounds cover the app viewport. Automatic metadata handles packaged executable names and unique subtitles, retries incomplete entries, and queues newly added games. Native macOS edition is version-aligned; its library behavior is unchanged.
+
 ## Joynite 0.7.0
 
 - Local launch counts and favorite-first startup ranking. The five featured cards appear as 4th · 2nd · 1st · 3rd · 5th; remaining ranks continue to the right. Older games start at zero, with no imported playtime/history. Ranking uses the session's initial counts to avoid reshuffles while browsing.
