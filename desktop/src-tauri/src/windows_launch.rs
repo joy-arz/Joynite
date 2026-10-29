@@ -22,6 +22,14 @@ fn wide(value: &OsStr) -> Result<Vec<u16>, String> {
 pub fn open(target: &OsStr, arguments: &str, directory: Option<&Path>) -> Result<(), String> {
     let file = wide(target)?;
     let args = wide(OsStr::new(arguments))?;
+    let directory = if Path::new(target)
+        .extension()
+        .is_some_and(|e| e.eq_ignore_ascii_case("lnk"))
+    {
+        None
+    } else {
+        directory
+    };
     let cwd = directory.map(|p| wide(p.as_os_str())).transpose()?;
     // An owned STA keeps shell extensions independent of Tauri's runtime apartment.
     std::thread::spawn(move || unsafe {
@@ -31,7 +39,7 @@ pub fn open(target: &OsStr, arguments: &str, directory: Option<&Path>) -> Result
         info.cbSize = std::mem::size_of::<SHELLEXECUTEINFOW>() as u32;
         info.fMask = SEE_MASK_NOASYNC | SEE_MASK_FLAG_NO_UI;
         info.lpFile = file.as_ptr();
-        info.lpParameters = args.as_ptr();
+        info.lpParameters = if args.len() == 1 { std::ptr::null() } else { args.as_ptr() };
         info.lpDirectory = cwd.as_ref().map_or(std::ptr::null(), |v| v.as_ptr());
         info.nShow = SW_SHOWNORMAL;
         // The default verb preserves shortcut behavior and Windows permission prompts.
