@@ -28,3 +28,7 @@ Reproduce scale profiles with `swift run --package-path macos -c release Joynite
 ## Version 0.7.1 Windows recovery
 
 Supplied screenshots show error 740 for Clair Obscur and error 5 for VALORANT in 0.7.0. Live official-provider validation finds Clair Obscur from `Expedition33-Win64-Shipping` and VALORANT from `VALORANT-Win64-Shipping`. Fixtures cover unique subtitle matching, ambiguity rejection, preserved custom overrides/launch counts, and registered/neighboring Riot Client routing. Windows CI exercises Unicode/null validation and a rejected missing-executable shell launch. Real game/UAC/Vanguard behavior requires retesting on the affected Windows device.
+
+Local 0.7.1 validation: 27 shared Rust tests passed (two opt-in tests excluded); the separate live-provider test passed. The frontend's 16 tests and all three release-feed tests passed. A separate MSVC-target compile check validated the Windows API module and its test code. Windows CI completed its backend tests and installer build.
+
+An isolated browser preview rendered the actual shared frontend with copied artwork and mocked local IPC. At 1280×720, the displayed background image bounds were exactly (0,0)–(1280,720), with object-fit: cover. Space → inkriotion → Enter selected Inscryption; Tab + Right returned to carousel navigation. This checks the web UI, not Windows WebView/UAC or a real game launch. Preview files and server were removed afterward.
