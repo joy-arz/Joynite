@@ -29,12 +29,13 @@ $("#app").innerHTML = `
 <footer><div class="hints" id="hints"></div><span id="input-kind">⌨ Keyboard</span><div class="status-row"><span id="status" role="status">Loading your library…</span><button id="notices" hidden></button><button id="cancel" hidden>Stop metadata fetch</button><button id="settings-open" title="Settings (Command/Ctrl+,)" aria-label="Joynite settings">⚙ Settings</button><button id="support" title="Support joy-arz on Ko-fi" aria-label="Support Joynite on Ko-fi"><img src="${kofi}" alt="">Support Joynite</button></div></footer>
 <aside id="library-panel" hidden><div class="panel-heading"><h2>Libraries</h2><button id="library-close" aria-label="Close libraries">×</button></div><nav id="filters"></nav><div class="panel-bottom"><button id="restore">Restore hidden games</button><button id="help">Help and notices</button></div></aside>
 <aside id="details" hidden><div class="panel-heading"><h2>Game details</h2><button id="details-close" aria-label="Close details">×</button></div><div id="detail-content"></div></aside>
-<dialog id="actions"><div class="dialog-heading"><h2>Your library</h2><button data-close aria-label="Close">×</button></div><div class="action-grid"><button id="add-game">Add game application</button><button id="add-folder">Add games / Wine-prefix folder</button><button id="scan">Scan installed games</button><button id="refresh">Refresh metadata</button><button id="edit-custom">Edit selected metadata / images</button><button id="publishers">Publisher metadata catalog</button><button id="preview-backup">Preview backup</button><button id="import">Restore library backup</button><button id="export">Back up library and images</button><button id="action-settings">Settings</button><button id="action-help">Help and notices</button></div></dialog>
+<dialog id="actions"><div class="dialog-heading"><h2>Your library</h2><button data-close aria-label="Close">×</button></div><div class="action-grid"><button id="add-game">Add game application</button><button id="add-folder">Add games / Wine-prefix folder</button><button id="scan">Scan installed games</button><button id="refresh">Refresh metadata</button><button id="edit-launch">Launch settings</button><button id="edit-custom">Edit selected metadata / images</button><button id="publishers">Publisher metadata catalog</button><button id="preview-backup">Preview backup</button><button id="import">Restore library backup</button><button id="export">Back up library and images</button><button id="action-settings">Settings</button><button id="action-help">Help and notices</button></div></dialog>
 <dialog id="metadata"><div class="dialog-heading"><h2>Find metadata</h2><button data-close aria-label="Close">×</button></div><p id="match-for"></p><form id="search-form"><input id="metadata-query" placeholder="Game title" aria-label="Game title"><button>Search Steam</button></form><div id="matches"></div><form id="page-form"><input id="metadata-page" placeholder="HTTPS Steam, GOG, itch.io or publisher page" aria-label="Store page"><button>Fetch page</button></form></dialog>
 <dialog id="publisher-list"><div class="dialog-heading"><h2>Beyond the stores</h2><button data-close aria-label="Close">×</button></div><p>Bundled metadata does not change a game's platform compatibility.</p><div id="publisher-items"></div></dialog>
 <dialog id="help-dialog"><div class="dialog-heading"><h2>Library help</h2><button data-close aria-label="Close">×</button></div><div id="help-content"></div></dialog>
 <dialog id="custom-editor"><div class="dialog-heading"><h2>Custom metadata & images</h2><button data-close aria-label="Close">×</button></div><p>Saved locally. Automatic refresh preserves your overrides. Images are copied into the offline cache.</p><form id="custom-form" class="custom-form"><label>Title<input id="custom-name" required maxlength="50000"></label><label>Developer<input id="custom-developer" maxlength="50000"></label><label>Release date<input id="custom-releaseDate" maxlength="50000"></label><label>Genres, separated by commas<input id="custom-genres" maxlength="50000"></label><label>Description<textarea id="custom-summary" maxlength="50000"></textarea></label><button id="custom-reset-text" type="button">Restore automatic text</button><div id="custom-images"></div><div class="custom-footer"><button id="custom-cancel" type="button">Cancel</button><button class="primary" type="submit">Save offline</button></div></form></dialog>
 <dialog id="settings-dialog"><div class="dialog-heading"><h2>Joynite settings</h2><button data-close aria-label="Close">×</button></div><label class="startup-setting"><input id="startup-enabled" type="checkbox">Launch Joynite when I sign in</label><p>Open your library automatically after signing in to this computer. Off by default. Keep Joynite in its installed location so the startup entry stays valid.</p><p id="startup-status" role="status"></p><button id="startup-refresh">Check startup setting</button><p id="update-check-status">Updates are checked quietly when Joynite opens.</p><button id="update-check">Check for updates…</button><h3>Library order</h3><p>Favorites first, then opens made through Joynite. Counts stay local and start at zero for older libraries.</p><p>Maintained by joy-arz.</p><button id="settings-support" class="support-link"><img src="${kofi}" alt="">Support Joynite on Ko-fi</button></dialog>
+<dialog id="launch-editor"><div class="dialog-heading"><h2>Launch settings</h2><button data-close aria-label="Close">×</button></div><form id="launch-form" class="custom-form"><p id="launch-for"></p><label>Launch method<select id="launch-method"><option value="automatic">Automatic (recommended)</option><option value="file">Application / shortcut</option><option value="url">Client URL</option></select></label><p id="launch-default"></p><label>Application path or client URL<input id="launch-target" maxlength="32768"></label><button id="launch-pick" type="button">Choose application / shortcut</button><label>Arguments, one per line<textarea id="launch-arguments" maxlength="16384" placeholder="One argument per line. Keep spaces inside an argument. Do not add surrounding quotes."></textarea></label><label>Working directory<input id="launch-directory" maxlength="32768" placeholder="Application folder by default; shortcuts use their own setting"></label><button id="launch-pick-directory" type="button">Choose working directory</button><label id="launch-admin-label"><input id="launch-admin" type="checkbox">Request administrator permission for this game</label><p>Automatic preserves the detected store or Wine runtime. Shortcuts and desktop entries retain their own working directory. Launch counts stay local to Joynite.</p><div class="custom-footer"><button id="launch-cancel" type="button">Cancel</button><button class="primary" type="submit">Save launch settings</button></div></form></dialog>
 <div id="announcement" class="sr-only" aria-live="polite"></div>`;
 
 let data = { games: [], folders: [], notices: [], platform: "" },
@@ -448,6 +449,7 @@ function renderDetails() {
   }
   for (const [label, action] of [
     [game.favorite ? "Remove favorite" : "Add favorite", () => favorite()],
+    ["Launch settings…", () => showLaunchEditor()],
     ["Edit metadata and images…", () => showCustomEditor()],
     ["Find metadata…", () => showMetadata()],
     [
@@ -552,12 +554,7 @@ async function addGame() {
     title: "Add a game application",
     directory: false,
     multiple: false,
-    filters:
-      data.platform === "macos"
-        ? [{ name: "Mac game", extensions: ["app"] }]
-        : data.platform === "windows"
-          ? [{ name: "Windows game", extensions: ["exe", "lnk"] }]
-          : [{ name: "Linux game", extensions: ["AppImage", "desktop"] }],
+    ...(data.platform === "macos" ? {filters:[{name:"Mac game",extensions:["app"]}]} : {}),
   });
   if (path) {
     snapshot(await invoke("add_game", { path }));
@@ -1391,3 +1388,44 @@ startSoftwareUpdates($("#app"));
 window.addEventListener("focus", () => {
   if (!$("#details").hidden) renderDetails();
 });
+
+
+let launchEditorID = null;
+function showLaunchEditor() {
+  const game = selected(); if (!game) return;
+  closeDialogs(); launchEditorID = game.id;
+  const action = game.launchAction;
+  const automatic = game.defaultLaunchAction;
+  $("#launch-for").textContent = game.name;
+  $("#launch-default").textContent = `Detected route: ${game.compatibility?.label || game.launchKind}. ${automatic?.target || game.launchTarget}`;
+  $("#launch-method").value = action?.kind || "automatic";
+  $("#launch-target").value = action?.target || automatic?.target || game.launchTarget;
+  $("#launch-arguments").value = (action?.arguments || automatic?.arguments || []).join("\n");
+  $("#launch-directory").value = action?.workingDirectory || automatic?.workingDirectory || "";
+  $("#launch-admin").checked = !!action?.runAsAdmin;
+  $("#launch-admin-label").hidden = data.platform !== "windows";
+  updateLaunchFields(); $("#launch-editor").showModal();
+}
+function updateLaunchFields() {
+  const method = $("#launch-method").value;
+  for (const id of ["launch-target", "launch-pick"]) $("#"+id).disabled = method === "automatic" || (id === "launch-pick" && method === "url");
+  for (const id of ["launch-arguments", "launch-directory", "launch-pick-directory", "launch-admin"]) $("#"+id).disabled = method !== "file";
+}
+$("#launch-method").onchange = updateLaunchFields;
+$("#edit-launch").onclick = showLaunchEditor;
+$("#launch-cancel").onclick = () => $("#launch-editor").close();
+$("#launch-pick").onclick = async () => {
+  try { const path = data.platform === "windows" ? await invoke("pick_windows_game") : await open({title:"Choose game application", multiple:false, ...(data.platform === "macos" ? {filters:[{name:"Mac game",extensions:["app"]}]} : {})}); if (path) $("#launch-target").value = path; } catch(e) { report(e); }
+};
+$("#launch-pick-directory").onclick = async () => {
+  try { const path = await open({title:"Choose working directory",directory:true,multiple:false}); if (path) $("#launch-directory").value = path; } catch(e) { report(e); }
+};
+$("#launch-form").onsubmit = async event => {
+  event.preventDefault(); const button = event.submitter; button.disabled = true;
+  try {
+    const kind = $("#launch-method").value;
+    const action = kind === "automatic" ? null : {kind,target:$("#launch-target").value.trim(),arguments:kind === "file" ? $("#launch-arguments").value.split(/\r?\n/).filter(a=>a.length>0) : [],workingDirectory:kind === "file" ? $("#launch-directory").value.trim() : "",runAsAdmin:kind === "file" && data.platform === "windows" && $("#launch-admin").checked};
+    snapshot(await invoke("save_launch_action",{id:launchEditorID,action}));
+    $("#launch-editor").close(); status("Launch settings saved. Automatic restores the detected route.");
+  } catch(e) { report(e); } finally { button.disabled = false; }
+};

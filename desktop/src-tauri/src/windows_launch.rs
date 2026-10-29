@@ -20,6 +20,16 @@ fn wide(value: &OsStr) -> Result<Vec<u16>, String> {
 }
 
 pub fn open(target: &OsStr, arguments: &str, directory: Option<&Path>) -> Result<(), String> {
+    open_configured(target, arguments, directory, false)
+}
+
+pub fn open_configured(
+    target: &OsStr,
+    arguments: &str,
+    directory: Option<&Path>,
+    as_admin: bool,
+) -> Result<(), String> {
+    let verb = wide(OsStr::new("runas"))?;
     let file = wide(target)?;
     let args = wide(OsStr::new(arguments))?;
     let directory = if Path::new(target)
@@ -38,6 +48,7 @@ pub fn open(target: &OsStr, arguments: &str, directory: Option<&Path>) -> Result
         let mut info: SHELLEXECUTEINFOW = std::mem::zeroed();
         info.cbSize = std::mem::size_of::<SHELLEXECUTEINFOW>() as u32;
         info.fMask = SEE_MASK_NOASYNC | SEE_MASK_FLAG_NO_UI;
+        info.lpVerb = if as_admin { verb.as_ptr() } else { std::ptr::null() };
         info.lpFile = file.as_ptr();
         info.lpParameters = if args.len() == 1 { std::ptr::null() } else { args.as_ptr() };
         info.lpDirectory = cwd.as_ref().map_or(std::ptr::null(), |v| v.as_ptr());

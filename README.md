@@ -4,6 +4,8 @@ Your games. One smooth carousel.
 
 Joynite is a redesigned, lightweight game library and launcher with a black-and-orange interface, persistent offline metadata, custom artwork, and keyboard/controller navigation. Choose the native SwiftUI edition for macOS or the Rust/system-webview edition for Windows, Linux, and macOS.
 
+Joynite retains Playnite's original source and license, but the shipped SwiftUI and Rust/webview apps are separate implementations. They do not load Playnite's .NET addons or WPF themes. [Upstream comparison and adapted behavior](docs/UPSTREAM-COMPARISON.md).
+
 **[Download Joynite](https://github.com/joy-arz/Joynite/releases)** · **[macOS guide](macos/README.md)** · **[Windows/Linux guide](desktop/README.md)** · **[Support on Ko-fi](https://ko-fi.com/joyarz)**
 
 ## Your library, front and center
@@ -17,6 +19,7 @@ Five cards wrap continuously. The selected game is largest and centered, with it
 ## Features
 
 - **Offline first.** Descriptions, developers, genres, dates, favorites, and artwork remain on disk across restarts. Custom text and three independent image overrides survive automatic refresh.
+- **Per-game launch settings (shared edition).** Keep automatic store/Wine routing or configure an application, arguments, working directory or supported client URL. Windows can request administrator permission for that game only. Native GOG primary tasks and Linux XDG/Flatpak game entries are discovered.
 - **Automatic metadata.** Steam, GOG, itch.io, Epic/store-page matching, and bundled publisher metadata for Roblox, VALORANT, Genshin Impact, EDOPro, YGOPro/Percy, YGOPro 2, KoishiPro, YGO Omega, MDPro3, and more. Provider availability varies.
 - **Installed-game discovery.** Steam, Epic/Heroic manifests, native game applications, and Steam inside Wine, CrossOver, and Sikarugir/Wineskin prefixes. Each compatibility installation keeps its original runtime and prefix.
 - **Your most-opened games first.** Startup puts the top five around the center: 4th · 2nd · 1st · 3rd · 5th. Favorites rank first, then successful launches made through Joynite. Remaining games continue in the same ranking; alphabetical ties stay stable. Counts are local and start at zero for older libraries.

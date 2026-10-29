@@ -54,3 +54,7 @@ Apple Developer ID/notarization, physical-controller coverage, real Windows/Linu
 - Automatic metadata cleans packaged executable titles, supports unambiguous subtitle matches, retries incomplete entries, and queues additions made during an active metadata pass. Explicit custom overrides remain authoritative.
 
 The supplied Windows screenshots establish failures in 0.7.0. The fix requires a real-device retest with those games; successful compilation and fixtures do not verify UAC acceptance, Riot authentication, Vanguard, or game-menu arrival.
+
+## Upstream behavior adapted in 0.8.0
+
+The original Playnite source was compared with the code actually packaged by Joynite. Its GameAction/ProcessStarter, GOG primary-task import, and per-field metadata fallback patterns informed the shared edition's new launch editor, Windows GOG discovery and missing-field provider fallback. Linux uses XDG/Flatpak inventory precedence and GIO activation because upstream has no Linux implementation. Custom actions commit before publishing state and survive rescans/backups without changing local launch counts. The exact inspected upstream commits, implementation mapping and compatibility limits are in docs/UPSTREAM-COMPARISON.md.

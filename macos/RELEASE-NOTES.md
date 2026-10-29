@@ -1,3 +1,7 @@
+## 0.8.0
+
+The shared Windows/Linux/macOS edition adapts Playnite-style per-game launch actions, GOG installed task discovery and missing-field metadata fallback. Linux discovery follows XDG/Flatpak desktop entries and validates GIO activation. The native SwiftUI edition is version-aligned and retains its existing launch interface. See docs/UPSTREAM-COMPARISON.md for source mapping and limits.
+
 ## 0.7.1
 
 Windows launch recovery: shell/shortcut handoffs and Riot Client routing. Shared backgrounds cover the app viewport. Automatic metadata handles packaged executable names and unique subtitles, retries incomplete entries, and queues newly added games. Native macOS edition is version-aligned; its library behavior is unchanged.

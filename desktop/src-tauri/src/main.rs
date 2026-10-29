@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 mod backup;
 mod discovery;
+mod installed;
 mod launch_plan;
 mod library;
 mod metadata;
@@ -158,6 +159,16 @@ async fn pick_windows_game() -> Result<Option<String>, String> {
     Err("Windows game selection requires Windows".into())
 }
 #[tauri::command]
+fn save_launch_action(
+    state: State<'_>,
+    id: String,
+    action: Option<model::LaunchAction>,
+) -> Result<Snapshot, String> {
+    let mut store = state.store.lock().map_err(|e| e.to_string())?;
+    store.set_launch_action(&id, action)?;
+    Ok(store.snapshot())
+}
+#[tauri::command]
 async fn add_game(state: State<'_>, path: String) -> Result<Snapshot, String> {
     let path = PathBuf::from(path);
     if !path.exists() {
@@ -168,7 +179,20 @@ async fn add_game(state: State<'_>, path: String) -> Result<Snapshot, String> {
         .unwrap_or_default()
         .to_string_lossy()
         .to_lowercase();
-    if !["app", "exe", "lnk", "appimage", "desktop"].contains(&extension.as_str()) {
+    #[cfg(target_os = "linux")]
+    let native_executable = {
+        use std::os::unix::fs::PermissionsExt;
+        path.is_file()
+            && !["sh", "bat", "cmd", "ps1"].contains(&extension.as_str())
+            && path
+                .metadata()
+                .is_ok_and(|m| m.permissions().mode() & 0o111 != 0)
+    };
+    #[cfg(not(target_os = "linux"))]
+    let native_executable = false;
+    if !native_executable
+        && !["app", "exe", "lnk", "appimage", "desktop"].contains(&extension.as_str())
+    {
         return Err("Choose a .app, .exe, .lnk, .AppImage, or .desktop game".into());
     }
     let target = path.to_string_lossy().into_owned();
@@ -490,6 +514,7 @@ fn main() {
             cancel_backup,
             export_library,
             import_library,
+            save_launch_action,
             save_custom_metadata
         ])
         .run(tauri::generate_context!())

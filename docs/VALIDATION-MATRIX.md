@@ -32,3 +32,9 @@ Supplied screenshots show error 740 for Clair Obscur and error 5 for VALORANT in
 Local 0.7.1 validation: 27 shared Rust tests passed (two opt-in tests excluded); the separate live-provider test passed. The frontend's 16 tests and all three release-feed tests passed. A separate MSVC-target compile check validated the Windows API module and its test code. Windows CI completed its backend tests and installer build.
 
 An isolated browser preview rendered the actual shared frontend with copied artwork and mocked local IPC. At 1280×720, the displayed background image bounds were exactly (0,0)–(1280,720), with object-fit: cover. Space → inkriotion → Enter selected Inscryption; Tab + Right returned to carousel navigation. This checks the web UI, not Windows WebView/UAC or a real game launch. Preview files and server were removed afterward.
+
+## Version 0.8 upstream adaptation
+
+Local validation: 35 shared Rust tests passed, plus the separately run live official-provider test. The frontend's 16 tests, three release-feed tests, catalog sync and version alignment passed. New fixtures cover GOG registry/manifests, primary arguments/working folders, Linux desktop sections and hidden user overrides, Windows quote round trips, metadata field fallback/custom precedence, and launch settings persistence/save failure. Windows CI additionally compares argument encoding with CommandLineToArgvW. A separate MSVC-target compile check covers the shell API module.
+
+The actual shared launch editor was checked in an isolated browser preview with copied artwork and mocked IPC. Application path, multiword arguments, working directory and per-game elevation persisted across reopening the form; restoring Automatic removed the override. No real game launched or real library changed. Preview files and server were removed. Real Windows consent/GOG/Galaxy, Linux desktop/Flatpak and physical-controller runs remain separate device tests.

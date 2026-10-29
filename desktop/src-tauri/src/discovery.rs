@@ -334,24 +334,6 @@ fn scan_apps(
         }
     }
 }
-fn desktop_game(path: &Path) -> Option<Game> {
-    let content = fs::read_to_string(path).ok()?;
-    let name = content.lines().find_map(|l| l.strip_prefix("Name="))?;
-    if !content
-        .lines()
-        .any(|l| l.starts_with("Categories=") && l.contains("Game"))
-    {
-        return None;
-    }
-    Some(Game {
-        id: format!("desktop:{}", path.display()),
-        name: name.into(),
-        launch_kind: "desktop".into(),
-        launch_target: path.to_string_lossy().into(),
-        install_path: path.to_string_lossy().into(),
-        ..Default::default()
-    })
-}
 pub fn scan(home: &Path, folders: &[String]) -> Scan {
     let mut out = Scan::default();
     let mut prefixes = vec![(home.join(".wine"), None, "Wine".into())];
@@ -442,15 +424,30 @@ pub fn scan(home: &Path, folders: &[String]) -> Scan {
         &mut out,
         &mut prefixes,
     );
-    for root in [
-        home.join(".local/share/applications"),
-        PathBuf::from("/usr/share/applications"),
-    ] {
-        for path in entries(&root) {
-            if let Some(game) = desktop_game(&path) {
-                out.games.push(game)
-            }
-        }
+    #[cfg(target_os = "linux")]
+    {
+        let mut roots = vec![std::env::var_os("XDG_DATA_HOME")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| home.join(".local/share"))
+            .join("applications")];
+        roots.push(home.join(".local/share/flatpak/exports/share/applications"));
+        roots.extend(
+            std::env::split_paths(
+                &std::env::var_os("XDG_DATA_DIRS")
+                    .unwrap_or_else(|| "/usr/local/share:/usr/share".into()),
+            )
+            .map(|p| p.join("applications")),
+        );
+        roots.push(PathBuf::from("/var/lib/flatpak/exports/share/applications"));
+        roots.retain(|p| p.is_absolute());
+        crate::installed::scan_desktop_roots(&roots, &mut out);
+    }
+    #[cfg(windows)]
+    {
+        let mut roots = crate::installed::windows_gog_roots();
+        roots.extend(folders.iter().map(PathBuf::from));
+        roots.push(home.join("GOG Games"));
+        crate::installed::scan_gog(&roots, &mut out);
     }
     let mut seen = HashSet::new();
     for (prefix, wrapper, label) in prefixes {
@@ -469,8 +466,17 @@ pub fn scan(home: &Path, folders: &[String]) -> Scan {
         }
     }
     scan_clients(home, &mut out);
+    let gog_targets: HashSet<_> = out
+        .games
+        .iter()
+        .filter(|g| g.store == "GOG")
+        .map(|g| g.launch_target.to_lowercase())
+        .collect();
     let mut seen = HashSet::new();
-    out.games.retain(|g| seen.insert(g.id.clone()));
+    out.games.retain(|g| {
+        !(g.store == "Mac" && gog_targets.contains(&g.launch_target.to_lowercase()))
+            && seen.insert(g.id.clone())
+    });
     out.games.sort_by_key(|g| g.name.to_lowercase());
     out
 }

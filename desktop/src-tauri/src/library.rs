@@ -179,6 +179,26 @@ impl Store {
             revision: self.revision,
         }
     }
+    pub fn set_launch_action(
+        &mut self,
+        id: &str,
+        action: Option<crate::model::LaunchAction>,
+    ) -> Result<(), String> {
+        self.ensure_writable()?;
+        if let Some(action) = &action {
+            crate::launch_plan::validate_action(action)?;
+        }
+        let mut next = self.library.clone();
+        next.games
+            .iter_mut()
+            .find(|g| g.id == id)
+            .ok_or("Game no longer exists")?
+            .launch_action = action;
+        save_library(&self.root, &next)?;
+        self.library = next;
+        self.revision += 1;
+        Ok(())
+    }
     pub fn record_launch(&mut self, id: &str) -> Result<(), String> {
         self.ensure_writable()?;
         let mut next = self.library.clone();
@@ -206,10 +226,28 @@ impl Store {
         let result = discovery::scan(&home, &self.library.folders);
         self.notices = result.warnings;
         for found in result.games {
-            if let Some(current) = self.library.games.iter_mut().find(|g| g.id == found.id) {
+            if let Some(current) = self.library.games.iter_mut().find(|g| {
+                g.id == found.id
+                    || (found.store == "GOG"
+                        && ["Mac", "Local", "GOG"].contains(&g.store.as_str())
+                        && if cfg!(windows) {
+                            g.launch_target.eq_ignore_ascii_case(&found.launch_target)
+                        } else {
+                            g.launch_target == found.launch_target
+                        })
+            }) {
+                if found.store == "GOG" {
+                    current.store = found.store.clone();
+                    current.store_id = found.store_id.clone();
+                }
                 current.launch_target = found.launch_target;
                 current.install_path = found.install_path;
-                current.compatibility = found.compatibility
+                current.compatibility = found.compatibility;
+                if let Some(action) = found.extra.get("defaultLaunchAction") {
+                    current
+                        .extra
+                        .insert("defaultLaunchAction".into(), action.clone());
+                }
             } else if !self.library.games.iter().any(|g| {
                 !g.install_path.is_empty()
                     && g.install_path == found.install_path
@@ -317,7 +355,7 @@ fn spawn_reaped(command: &mut Command) -> Result<(), String> {
     });
     Ok(())
 }
-pub fn open_uri(url: &str) -> Result<(), String> {
+pub fn validate_uri(url: &str) -> Result<(), String> {
     let parsed = reqwest::Url::parse(url).map_err(|e| e.to_string())?;
     if ![
         "steam",
@@ -331,6 +369,10 @@ pub fn open_uri(url: &str) -> Result<(), String> {
     {
         return Err("Unsupported launch protocol".into());
     }
+    Ok(())
+}
+pub fn open_uri(url: &str) -> Result<(), String> {
+    validate_uri(url)?;
     #[cfg(target_os = "macos")]
     let mut cmd = {
         let mut c = Command::new("/usr/bin/open");
@@ -493,6 +535,14 @@ pub fn record_failed_launch(game: &Game, root: &Path, error: &str) {
     diagnostic(root, &game.id, "failed", error, None, None, None);
 }
 pub fn launch(game: &Game, root: &Path) -> Result<(), String> {
+    if let Some(action) = &game.launch_action {
+        return launch_action(game, action, root);
+    }
+    if let Some(action) = game.extra.get("defaultLaunchAction") {
+        let action: crate::model::LaunchAction = serde_json::from_value(action.clone())
+            .map_err(|e| format!("Invalid installed-game action: {e}"))?;
+        return launch_action(game, &action, root);
+    }
     if game.launch_kind == "store" {
         open_uri(&game.launch_target)?;
         diagnostic(root,&game.id,"accepted","A store launch request was handed to the operating system. Complete client prompts; game-menu arrival is not verified.",None,None,None);
@@ -539,16 +589,7 @@ pub fn launch(game: &Game, root: &Path) -> Result<(), String> {
             return Err("Mac application bundles require macOS".into());
         }
     } else if game.launch_kind == "desktop" {
-        #[cfg(target_os = "linux")]
-        {
-            let mut c = Command::new("gio");
-            c.arg("launch").arg(path);
-            c
-        }
-        #[cfg(not(target_os = "linux"))]
-        {
-            return Err("Desktop entries require Linux".into());
-        }
+        return launch_desktop(path, root, &game.id);
     } else {
         if path
             .extension()
@@ -690,12 +731,18 @@ pub fn enrich(state: &AppState, id: &str, source: Option<&str>) -> Result<(), St
         client.automatic(&original)?
     };
     let mut updated = original.clone();
+    if source.is_some() && details.steam_id.is_empty() {
+        updated.extra.remove("metadataSteamId");
+    }
     details.apply(&mut updated);
     client.artwork(&mut updated, &root);
     let mut store = state.store.lock().map_err(|e| e.to_string())?;
     if let Some(current) = store.library.games.iter_mut().find(|g| g.id == id) {
         if current.metadata_updated != original.metadata_updated {
             return Ok(());
+        }
+        if source.is_some() && details.steam_id.is_empty() {
+            current.extra.remove("metadataSteamId");
         }
         details.apply(current);
         current.cached_artwork = updated.cached_artwork;
@@ -742,10 +789,7 @@ impl AppState {
                 .library
                 .games
                 .iter()
-                .filter(|g| {
-                    all || g.metadata_updated.is_none()
-                        || (g.summary.is_empty() && g.developer.is_empty())
-                })
+                .filter(|g| all || metadata::needs_metadata(g))
                 .map(|g| g.id.clone())
                 .collect()
         };
@@ -982,5 +1026,170 @@ mod launch_and_patch_tests {
             .games
             .is_empty());
         assert_eq!(cursor, 1);
+    }
+}
+
+fn launch_action(
+    game: &Game,
+    action: &crate::model::LaunchAction,
+    root: &Path,
+) -> Result<(), String> {
+    crate::launch_plan::validate_action(action)?;
+    if action.kind == "url" {
+        open_uri(&action.target)?;
+        diagnostic(
+            root,
+            &game.id,
+            "accepted",
+            "Configured client URL accepted. Game-menu arrival is unverified.",
+            None,
+            None,
+            None,
+        );
+        return Ok(());
+    }
+    let path = Path::new(&action.target);
+    if !path.exists() {
+        return Err(
+            "Configured application is missing. Reconnect its disk or edit Launch settings.".into(),
+        );
+    }
+    let directory = if action.working_directory.is_empty() {
+        path.parent()
+    } else {
+        Some(Path::new(&action.working_directory))
+    };
+    if directory.is_some_and(|p| !p.is_dir()) {
+        return Err("Configured working directory is unavailable".into());
+    }
+    #[cfg(windows)]
+    {
+        if !path.is_file()
+            || !path
+                .extension()
+                .is_some_and(|e| e.eq_ignore_ascii_case("exe") || e.eq_ignore_ascii_case("lnk"))
+        {
+            return Err("Choose a Windows .exe or .lnk application".into());
+        }
+        crate::windows_launch::open_configured(
+            path.as_os_str(),
+            &crate::launch_plan::windows_arguments(&action.arguments),
+            directory,
+            action.run_as_admin,
+        )?;
+        diagnostic(root, &game.id, "accepted", "Configured Windows launch accepted. Complete any client/permission prompts; game-menu arrival is unverified.", None, None, None);
+        return Ok(());
+    }
+    #[cfg(not(windows))]
+    {
+        if path.extension().is_some_and(|e| e == "desktop") {
+            if !action.arguments.is_empty() {
+                return Err("Edit launch arguments in the desktop entry itself".into());
+            }
+            return launch_desktop(path, root, &game.id);
+        }
+        if path
+            .extension()
+            .is_some_and(|e| ["sh", "bat", "cmd", "ps1"].iter().any(|x| e == *x))
+        {
+            return Err("Choose a game application or desktop entry".into());
+        }
+        let mut command = if path.extension().is_some_and(|e| e == "app") {
+            #[cfg(target_os = "macos")]
+            {
+                let mut c = Command::new("/usr/bin/open");
+                c.arg("-a").arg(path);
+                if !action.arguments.is_empty() {
+                    c.arg("--args");
+                }
+                c
+            }
+            #[cfg(not(target_os = "macos"))]
+            {
+                return Err("Mac application bundles require macOS".into());
+            }
+        } else {
+            Command::new(path)
+        };
+        command.args(&action.arguments);
+        if let Some(directory) = directory {
+            command.current_dir(directory);
+        }
+        spawn_tracked(&mut command, root, &game.id)
+    }
+}
+
+fn launch_desktop(path: &Path, root: &Path, id: &str) -> Result<(), String> {
+    #[cfg(target_os = "linux")]
+    {
+        let output = Command::new("gio").arg("launch").arg(path).stdin(Stdio::null()).output().map_err(|e| format!("Cannot open the desktop entry with GIO: {e}. Install GIO utilities or choose the game executable."))?;
+        if !output.status.success() {
+            return Err(format!(
+                "Desktop launch failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+                    .chars()
+                    .take(2000)
+                    .collect::<String>()
+            ));
+        }
+        diagnostic(root, id, "accepted", "Desktop entry accepted by GIO, including its Exec/Path and activation settings. Game-menu arrival is unverified.", None, None, None);
+        Ok(())
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = (path, root, id);
+        Err("Desktop entries require Linux".into())
+    }
+}
+
+#[cfg(test)]
+mod launch_settings_persistence_tests {
+    use super::*;
+    #[test]
+    fn action_changes_commit_before_publish_and_survive_backups() {
+        let t = tempfile::tempdir().unwrap();
+        let mut store = Store {
+            library: Library {
+                games: vec![Game {
+                    id: "game".into(),
+                    launch_count: 9,
+                    favorite: true,
+                    ..Default::default()
+                }],
+                ..Default::default()
+            },
+            root: t.path().to_owned(),
+            error: None,
+            notices: vec![],
+            revision: 0,
+        };
+        let action = crate::model::LaunchAction {
+            kind: "url".into(),
+            target: "steam://rungameid/42".into(),
+            ..Default::default()
+        };
+        store.set_launch_action("game", Some(action)).unwrap();
+        assert_eq!(store.revision, 1);
+        let saved: Library =
+            serde_json::from_slice(&fs::read(t.path().join("library.json")).unwrap()).unwrap();
+        assert_eq!(
+            saved.games[0].launch_action.as_ref().unwrap().target,
+            "steam://rungameid/42"
+        );
+        assert_eq!(saved.games[0].launch_count, 9);
+        let blocked = t.path().join("blocked");
+        fs::write(&blocked, b"file").unwrap();
+        store.root = blocked;
+        assert!(store.set_launch_action("game", None).is_err());
+        assert!(store.library.games[0].launch_action.is_some());
+        assert_eq!(store.revision, 1);
+        store.root = t.path().to_owned();
+        store.set_launch_action("game", None).unwrap();
+        assert!(store.library.games[0].launch_action.is_none());
+        assert!(store.library.games[0].favorite);
+        let backup: Library =
+            serde_json::from_slice(&fs::read(t.path().join("library.json.backup")).unwrap())
+                .unwrap();
+        assert!(backup.games[0].launch_action.is_some());
     }
 }

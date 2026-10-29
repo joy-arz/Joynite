@@ -50,8 +50,49 @@ pub struct Details {
     pub url: String,
     pub source: String,
     pub genres: Vec<String>,
+    pub steam_id: String,
 }
 impl Details {
+    pub fn partial(&self) -> bool {
+        self.summary.is_empty()
+            || self.developer.is_empty()
+            || self.release_date.is_empty()
+            || self.genres.is_empty()
+            || self.artwork.is_empty()
+            || self.background.is_empty()
+    }
+    pub fn fill_missing(&mut self, other: &Details) {
+        let mut used = false;
+        for (value, fallback) in [
+            (&mut self.name, &other.name),
+            (&mut self.summary, &other.summary),
+            (&mut self.developer, &other.developer),
+            (&mut self.release_date, &other.release_date),
+            (&mut self.artwork, &other.artwork),
+            (&mut self.background, &other.background),
+            (&mut self.url, &other.url),
+        ] {
+            if value.is_empty() && !fallback.is_empty() {
+                *value = fallback.clone();
+                used = true;
+            }
+        }
+        if self.genres.is_empty() && !other.genres.is_empty() {
+            self.genres = other.genres.clone();
+            used = true;
+        }
+        if !other.steam_id.is_empty() {
+            self.steam_id = other.steam_id.clone();
+            used = true;
+        }
+        if used && !other.source.is_empty() && !self.source.contains(&other.source) {
+            self.source = if self.source.is_empty() {
+                other.source.clone()
+            } else {
+                format!("{} + {}", self.source, other.source)
+            };
+        }
+    }
     pub fn apply(&self, game: &mut Game) {
         let mut automatic = game
             .automatic_metadata
@@ -91,6 +132,12 @@ impl Details {
             game.store_url = self.url.clone()
         }
         game.refresh_source();
+        if self.steam_id.parse::<u64>().is_ok() {
+            game.extra.insert(
+                "metadataSteamId".into(),
+                serde_json::Value::String(self.steam_id.clone()),
+            );
+        }
         game.metadata_updated = Some(now());
     }
 }
@@ -250,6 +297,35 @@ impl Client {
         let html = String::from_utf8(self.request(url, true)?).map_err(|e| e.to_string())?;
         parse_html(&html, url)
     }
+    fn gog(&self, game: &Game) -> Result<Details, String> {
+        let mut url =
+            reqwest::Url::parse("https://catalog.gog.com/v1/catalog").map_err(|e| e.to_string())?;
+        url.query_pairs_mut().extend_pairs([
+            ("query", game.name.as_str()),
+            ("limit", "10"),
+            ("countryCode", "US"),
+            ("locale", "en-US"),
+            ("currencyCode", "USD"),
+        ]);
+        let data: Value = serde_json::from_slice(&self.request(url.as_str(), true)?)
+            .map_err(|e| e.to_string())?;
+        let matches: Vec<_> = data["products"]
+            .as_array()
+            .map(|a| {
+                a.iter()
+                    .filter(|i| {
+                        normalized(i["title"].as_str().unwrap_or("")) == normalized(&game.name)
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        if matches.len() == 1 {
+            if let Some(url) = matches[0]["storeLink"].as_str() {
+                return self.page(url);
+            }
+        }
+        Err("No unique GOG catalog match".into())
+    }
     pub fn automatic(&self, game: &Game) -> Result<Details, String> {
         if let Some(entry) = publisher(&crate::launch_plan::clean_title(&game.name)) {
             let mut data = Details {
@@ -263,12 +339,9 @@ impl Client {
                 genres: entry.genres,
                 ..Default::default()
             };
-            if let Ok(remote) = self.page(&data.url) {
-                if data.artwork.is_empty() && !remote.artwork.is_empty() {
-                    data.artwork = remote.artwork
-                }
-                if data.background.is_empty() && !remote.background.is_empty() {
-                    data.background = remote.background;
+            if data.partial() {
+                if let Ok(remote) = self.page(&data.url) {
+                    data.fill_missing(&remote);
                 }
             }
             return Ok(data);
@@ -276,49 +349,39 @@ impl Client {
         if game.store == "Steam" && !game.store_id.is_empty() {
             return self.steam(&game.store_id);
         }
-        if !game.store_url.is_empty() {
-            if let Ok(details) = self.page(&game.store_url) {
-                return Ok(details);
-            }
+        let mut primary = if !game.store_url.is_empty() {
+            self.page(&game.store_url).ok()
+        } else {
+            None
+        };
+        if primary.is_none() && game.store == "GOG" {
+            primary = self.gog(game).ok();
         }
-        let query = crate::launch_plan::clean_title(&game.name);
-        if let Ok(items) = self.search(&query) {
-            if let Some(id) = steam_match(&items, &query) {
-                return self.steam(&id.to_string());
-            }
-        }
-        if game.store == "GOG" {
-            let mut url = reqwest::Url::parse("https://catalog.gog.com/v1/catalog")
-                .map_err(|e| e.to_string())?;
-            url.query_pairs_mut().extend_pairs([
-                ("query", game.name.as_str()),
-                ("limit", "10"),
-                ("countryCode", "US"),
-                ("locale", "en-US"),
-                ("currencyCode", "USD"),
-            ]);
-            let data: Value = serde_json::from_slice(&self.request(url.as_str(), true)?)
-                .map_err(|e| e.to_string())?;
-            let matches: Vec<_> = data["products"]
-                .as_array()
-                .map(|a| {
-                    a.iter()
-                        .filter(|i| {
-                            normalized(i["title"].as_str().unwrap_or("")) == normalized(&game.name)
-                        })
-                        .collect()
-                })
-                .unwrap_or_default();
-            if matches.len() == 1 {
-                if let Some(url) = matches[0]["storeLink"].as_str() {
-                    return self.page(url);
+        if primary.as_ref().is_none_or(Details::partial) {
+            let name = primary
+                .as_ref()
+                .map(|p| p.name.as_str())
+                .filter(|n| !n.is_empty())
+                .unwrap_or(&game.name);
+            let query = crate::launch_plan::clean_title(name);
+            if let Ok(items) = self.search(&query) {
+                if let Some(id) = steam_match(&items, &query) {
+                    if let Ok(fallback) = self.steam(&id.to_string()) {
+                        if let Some(primary) = primary.as_mut() {
+                            primary.fill_missing(&fallback);
+                        } else {
+                            primary = Some(fallback);
+                        }
+                    }
                 }
             }
         }
-        Err(format!(
-            "No exact metadata match for {}. Choose a search result or publisher entry.",
-            game.name
-        ))
+        primary.ok_or_else(|| {
+            format!(
+                "No unique metadata match for {}. Choose a search result or publisher entry.",
+                game.name
+            )
+        })
     }
     pub fn cache(
         &self,
@@ -371,6 +434,14 @@ impl Client {
             String::new()
         };
         if id.is_empty() {
+            id = game
+                .extra
+                .get("metadataSteamId")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .into();
+        }
+        if id.is_empty() {
             if let Ok(url) = reqwest::Url::parse(&game.store_url) {
                 if url.host_str() == Some("store.steampowered.com") {
                     let parts: Vec<_> =
@@ -405,6 +476,11 @@ impl Client {
             if let Ok(key) = self.cache(&url, root, &game.id, "portrait") {
                 game.cached_artwork = Some(key);
                 break;
+            }
+        }
+        if id.is_empty() && !game.artwork.is_empty() {
+            if let Ok(key) = self.cache(&game.artwork, root, &game.id, "any") {
+                game.cached_artwork = Some(key);
             }
         }
         if game.cached_artwork.is_none() {
@@ -478,6 +554,7 @@ pub fn parse_steam(data: &Value, id: &str) -> Result<Details, String> {
     }
     let v = &item["data"];
     Ok(Details {
+        steam_id: id.into(),
         name: v["name"].as_str().unwrap_or("").into(),
         summary: plain(v["short_description"].as_str().unwrap_or("")),
         developer: v["developers"]
@@ -844,5 +921,71 @@ mod live_automatic_tests {
         let details = client.automatic(&game).unwrap();
         assert_eq!(details.name, "VALORANT");
         assert_eq!(details.developer, "Riot Games");
+    }
+}
+
+pub fn needs_metadata(game: &Game) -> bool {
+    let Some(updated) = game.metadata_updated else {
+        return true;
+    };
+    let incomplete = game.summary.is_empty()
+        || game.developer.is_empty()
+        || game.genres.is_empty()
+        || game.artwork.is_empty()
+        || (publisher(&game.name).is_none() && game.release_date.is_empty());
+    incomplete && (updated > now() || now() - updated >= 86400.0)
+}
+
+#[cfg(test)]
+mod fallback_tests {
+    use super::*;
+    #[test]
+    fn secondary_provider_fills_only_missing_fields_and_keeps_overrides() {
+        let mut primary = Details {
+            name: "Store title".into(),
+            summary: "Store summary".into(),
+            url: "https://www.gog.com/game/example".into(),
+            source: "GOG".into(),
+            ..Default::default()
+        };
+        primary.fill_missing(&Details {
+            name: "Steam title".into(),
+            summary: "Other summary".into(),
+            developer: "Developer".into(),
+            release_date: "2020-01-01".into(),
+            genres: vec!["RPG".into()],
+            artwork: "https://example.com/cover.png".into(),
+            steam_id: "42".into(),
+            source: "Steam".into(),
+            ..Default::default()
+        });
+        assert_eq!(primary.summary, "Store summary");
+        assert_eq!(primary.url, "https://www.gog.com/game/example");
+        assert_eq!(primary.developer, "Developer");
+        assert_eq!(primary.source, "GOG + Steam");
+        let mut game = Game {
+            store: "GOG".into(),
+            store_id: "123".into(),
+            launch_count: 8,
+            metadata_overrides: Some(std::collections::BTreeMap::from([(
+                "summary".into(),
+                "Custom".into(),
+            )])),
+            ..Default::default()
+        };
+        primary.apply(&mut game);
+        assert_eq!(game.summary, "Custom");
+        assert_eq!(game.store_id, "123");
+        assert_eq!(game.extra["metadataSteamId"], "42");
+        assert_eq!(game.launch_count, 8);
+    }
+    #[test]
+    fn partial_metadata_retries_after_cooldown_without_fetching_every_start() {
+        let mut game = Game::default();
+        assert!(needs_metadata(&game));
+        game.metadata_updated = Some(now());
+        assert!(!needs_metadata(&game));
+        game.metadata_updated = Some(now() - 86401.0);
+        assert!(needs_metadata(&game));
     }
 }

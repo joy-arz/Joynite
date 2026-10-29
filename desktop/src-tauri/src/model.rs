@@ -17,6 +17,15 @@ pub struct CompatibilityLaunch {
     pub working_directory: String,
     pub label: String,
 }
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct LaunchAction {
+    pub kind: String,
+    pub target: String,
+    pub arguments: Vec<String>,
+    pub working_directory: String,
+    pub run_as_admin: bool,
+}
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Game {
@@ -25,6 +34,7 @@ pub struct Game {
     pub store: String,
     pub launch_kind: String,
     pub launch_target: String,
+    pub launch_action: Option<LaunchAction>,
     pub install_path: String,
     pub store_id: String,
     pub summary: String,
@@ -68,6 +78,7 @@ impl Default for Game {
             store: "Mac".into(),
             launch_kind: "application".into(),
             launch_target: String::new(),
+            launch_action: None,
             install_path: String::new(),
             store_id: String::new(),
             summary: String::new(),
