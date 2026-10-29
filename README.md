@@ -50,7 +50,7 @@ npm test
 npm run tauri -- build
 ```
 
-See the platform guides for compatibility limits. Discovery and metadata do not make a Windows-only game or its anti-cheat work on another operating system. Mac preview builds are ad-hoc signed rather than notarized. Original Windows Playnite plugins and themes are not portable to these interfaces.
+See the platform guides for compatibility limits. Discovery and metadata do not make a Windows-only game or its anti-cheat work on another operating system. Mac builds are ad-hoc signed rather than notarized. Original Windows Playnite plugins and themes are not portable to these interfaces.
 
 ## Support Joynite
 
