@@ -20,7 +20,11 @@ jobs:
           python scripts/validate-release-config.py
           python scripts/test-update-feeds.py
       - name: Validate core behavior
-        run: swift run --package-path macos JoyniteValidation
+        run: |
+          swift build --package-path macos --product JoyniteValidation
+          VALIDATION_BIN="$(swift build --package-path macos --show-bin-path)/JoyniteValidation"
+          codesign --force --sign - "$VALIDATION_BIN"
+          "$VALIDATION_BIN"
       - name: Build signed application bundle
         run: macos/scripts/build-app.sh
       - uses: actions/upload-artifact@v4
