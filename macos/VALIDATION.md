@@ -8,7 +8,7 @@ The installed native Joynite app migrated the existing six-game library and cach
 
 The native Settings window started with launch-at-login off. Enabling it registered successfully through SMAppService and showed on; disabling it unregistered successfully and returned to off. The setting was left off. This validates registration state, not a machine reboot.
 
-Shared startup uses Tauri autostart 2.7.0 with explicit permissions for status, enable, and disable. Its Linux AppImage path handling was checked in the installed plugin source. Platform build results and shared UI checks are recorded with the release. No real game was uninstalled during this rename.
+Shared startup uses Tauri autostart 2.7.0 with explicit permissions for status, enable, and disable. Its Linux AppImage path handling was checked in the installed plugin source. The shared offline UI also showed Joynite branding and six games. Its startup checkbox registered a Joynite launch agent pointing to the exact test executable with RunAtLoad enabled, then removed that entry when disabled. Both settings were left off. Platform build results are recorded with the release. No real game was uninstalled during this rename.
 
 Previous validation history follows. Names in earlier records describe the predecessor versions; original artifacts remain available under their original tags.
 
