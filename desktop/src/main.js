@@ -12,6 +12,7 @@ import {
 import "./style.css";
 import logo from "./logo.svg";
 import kofi from "./kofi.svg";
+import { startSoftwareUpdates } from "./software-updates.js";
 import {
   enable as enableStartup,
   disable as disableStartup,
@@ -31,7 +32,7 @@ $("#app").innerHTML = `
 <dialog id="publisher-list"><div class="dialog-heading"><h2>Beyond the stores</h2><button data-close aria-label="Close">×</button></div><p>Bundled metadata does not change a game's platform compatibility.</p><div id="publisher-items"></div></dialog>
 <dialog id="help-dialog"><div class="dialog-heading"><h2>Library help</h2><button data-close aria-label="Close">×</button></div><div id="help-content"></div></dialog>
 <dialog id="custom-editor"><div class="dialog-heading"><h2>Custom metadata & images</h2><button data-close aria-label="Close">×</button></div><p>Saved locally. Automatic refresh preserves your overrides. Images are copied into the offline cache.</p><form id="custom-form" class="custom-form"><label>Title<input id="custom-name" required maxlength="50000"></label><label>Developer<input id="custom-developer" maxlength="50000"></label><label>Release date<input id="custom-releaseDate" maxlength="50000"></label><label>Genres, separated by commas<input id="custom-genres" maxlength="50000"></label><label>Description<textarea id="custom-summary" maxlength="50000"></textarea></label><button id="custom-reset-text" type="button">Restore automatic text</button><div id="custom-images"></div><div class="custom-footer"><button id="custom-cancel" type="button">Cancel</button><button class="primary" type="submit">Save offline</button></div></form></dialog>
-<dialog id="settings-dialog"><div class="dialog-heading"><h2>Joynite settings</h2><button data-close aria-label="Close">×</button></div><label class="startup-setting"><input id="startup-enabled" type="checkbox">Launch Joynite when I sign in</label><p>Open your library automatically after signing in to this computer. Off by default. Keep Joynite in its installed location so the startup entry stays valid.</p><p id="startup-status" role="status"></p><button id="startup-refresh">Check startup setting</button><p>Maintained by joy-arz.</p><button id="settings-support" class="support-link"><img src="${kofi}" alt="">Support Joynite on Ko-fi</button></dialog>
+<dialog id="settings-dialog"><div class="dialog-heading"><h2>Joynite settings</h2><button data-close aria-label="Close">×</button></div><label class="startup-setting"><input id="startup-enabled" type="checkbox">Launch Joynite when I sign in</label><p>Open your library automatically after signing in to this computer. Off by default. Keep Joynite in its installed location so the startup entry stays valid.</p><p id="startup-status" role="status"></p><button id="startup-refresh">Check startup setting</button><p id="update-check-status">Updates are checked quietly when Joynite opens.</p><button id="update-check">Check for updates…</button><p>Maintained by joy-arz.</p><button id="settings-support" class="support-link"><img src="${kofi}" alt="">Support Joynite on Ko-fi</button></dialog>
 <div id="announcement" class="sr-only" aria-live="polite"></div>`;
 
 let data = { games: [], folders: [], notices: [], platform: "" },
@@ -648,6 +649,12 @@ window.addEventListener("keydown", (event) => {
     scan();
     return;
   }
+  if (
+    event.target instanceof HTMLElement &&
+    event.target.matches("button:not(.card),a") &&
+    ["Enter", " "].includes(event.key)
+  )
+    return;
   if (typing(event.target)) {
     if (event.key === "Escape") {
       $("#search").value = "";
@@ -1065,3 +1072,5 @@ $("#action-settings").onclick = showSettings;
 for (const id of ["#support", "#settings-support"])
   $(id).onclick = () =>
     invoke("open_page", { url: "https://ko-fi.com/joyarz" }).catch(report);
+
+startSoftwareUpdates($("#app"));

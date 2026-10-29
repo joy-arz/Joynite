@@ -1,9 +1,9 @@
 name: Cross-platform carousel
 on:
   push:
-    paths: ['branding/**', 'desktop/**', '.github/workflows/desktop.yml']
+    paths: ['branding/**', 'desktop/**', 'updates/**', '.github/workflows/desktop.yml']
   pull_request:
-    paths: ['branding/**', 'desktop/**', '.github/workflows/desktop.yml']
+    paths: ['branding/**', 'desktop/**', 'updates/**', '.github/workflows/desktop.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -26,8 +26,14 @@ jobs:
     env:
       CARGO_TERM_COLOR: always
       APPIMAGE_EXTRACT_AND_RUN: '1'
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.JOYNITE_TAURI_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ''
     steps:
       - uses: actions/checkout@v4
+      - name: Validate release configuration and feed generation
+        run: |
+          python scripts/validate-release-config.py
+          python scripts/test-update-feeds.py
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -56,19 +62,41 @@ jobs:
         run: cargo test --manifest-path src-tauri/Cargo.toml --locked
       - name: Build platform application
         working-directory: desktop
-        run: npm run tauri -- build --bundles ${{ matrix.bundles }}
+        shell: bash
+        run: |
+          rm -rf src-tauri/target/release/bundle
+          if [ -n "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+            npm run tauri -- build --bundles ${{ matrix.bundles }}
+          else
+            npm run tauri -- build --bundles ${{ matrix.bundles }} --config '{"bundle":{"createUpdaterArtifacts":false}}'
+          fi
+      - name: Sign Debian update package
+        if: runner.os == 'Linux' && env.TAURI_SIGNING_PRIVATE_KEY != ''
+        working-directory: desktop
+        run: |
+          for package in src-tauri/target/release/bundle/deb/*.deb; do
+            npm run tauri -- signer sign "$package"
+          done
       - name: Archive macOS app
         if: runner.os == 'macOS'
         run: |
           codesign --force --deep --sign - 'desktop/src-tauri/target/release/bundle/macos/Joynite.app'
           codesign --verify --deep --strict 'desktop/src-tauri/target/release/bundle/macos/Joynite.app'
-          ditto -c -k --sequesterRsrc --keepParent 'desktop/src-tauri/target/release/bundle/macos/Joynite.app' 'desktop/JoyniteDesktop-macOS.zip'
+          tar -czf 'desktop/src-tauri/target/release/bundle/macos/Joynite.app.tar.gz' -C desktop/src-tauri/target/release/bundle/macos Joynite.app
+          if [ -n "$TAURI_SIGNING_PRIVATE_KEY" ]; then npm run tauri --prefix desktop -- signer sign 'desktop/src-tauri/target/release/bundle/macos/Joynite.app.tar.gz'; fi
+          python3 -c 'import platform,json;open("desktop/updater-platform.json","w").write(json.dumps({"platform":"darwin-"+("aarch64" if platform.machine()=="arm64" else "x86_64")}))'
+          ditto -c -k --sequesterRsrc --keepParent 'desktop/src-tauri/target/release/bundle/macos/Joynite.app'  'desktop/JoyniteDesktop-macOS.zip'
       - uses: actions/upload-artifact@v4
         with:
           name: JoyniteDesktop-${{ matrix.name }}
           if-no-files-found: error
           path: |
             desktop/src-tauri/target/release/bundle/nsis/*-setup.exe
+            desktop/src-tauri/target/release/bundle/nsis/*.sig
             desktop/src-tauri/target/release/bundle/deb/*.deb
+            desktop/src-tauri/target/release/bundle/deb/*.sig
             desktop/src-tauri/target/release/bundle/appimage/*.AppImage
+            desktop/src-tauri/target/release/bundle/appimage/*.sig
+            desktop/src-tauri/target/release/bundle/macos/*.tar.gz*
             desktop/JoyniteDesktop-macOS.zip
+            desktop/updater-platform.json

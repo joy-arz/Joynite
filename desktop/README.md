@@ -61,3 +61,7 @@ Settings includes **Launch Joynite when I sign in**, off by default. Windows use
 The orange Ko-fi cup in the bottom-right footer opens https://ko-fi.com/joyarz in the default browser. Opening Joynite does not load a donation widget or make a support-page network request.
 
 Joynite migrates earlier libraries without deleting their originals. Legacy data directory names and environment-variable aliases remain only for migration/backward compatibility. Original upstream code and licensing still refer to Playnite.
+
+## Quiet software updates
+
+A background check runs after startup without blocking your library. A new official release appears in a small top-right notice. Update now downloads and verifies the signed package before installation. Update later snoozes that version for 24 hours. Don’t remind me again skips only that version; newer releases can notify again. Offline failures stay silent. Settings includes a manual check. Libraries, cached artwork, and game installations are not replaced by app updates. Version 0.4 needs one manual install of 0.5 to gain this feature. See ../updates/README.md and ../IMPROVEMENTS.md.

@@ -3,11 +3,15 @@ on:
   workflow_dispatch:
     inputs:
       artifact_run_id:
-        description: Successful desktop build run containing Windows and Linux artifacts
+        description: Successful shared desktop build run
+        required: true
+        type: string
+      native_run_id:
+        description: Successful native macOS build run
         required: true
         type: string
       release_tag:
-        description: Existing draft or published release tag
+        description: Existing official-release draft tag
         required: true
         type: string
 permissions:
@@ -20,19 +24,33 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
       ARTIFACT_RUN: ${{ inputs.artifact_run_id }}
+      NATIVE_RUN: ${{ inputs.native_run_id }}
       RELEASE_TAG: ${{ inputs.release_tag }}
     steps:
-      - name: Retrieve platform packages
+      - uses: actions/checkout@v4
+      - name: Verify successful build provenance
+        run: |
+          python3 - <<'PY'
+          import os,json,subprocess
+          runs=[json.loads(subprocess.check_output(['gh','api',f"repos/{os.environ['GH_REPO']}/actions/runs/{os.environ[key]}"])) for key in ['ARTIFACT_RUN','NATIVE_RUN']]
+          for run in runs:
+              if run['conclusion']!='success' or run['event']!='push' or run['head_branch']!='main':
+                  raise SystemExit('Release artifacts must come from successful trusted main-branch push builds')
+          if runs[0]['head_sha']!=runs[1]['head_sha']:
+              raise SystemExit('Native and shared artifacts must use the same commit')
+          PY
+      - name: Retrieve signed platform packages
         run: |
           gh run download "$ARTIFACT_RUN" --name JoyniteDesktop-Windows --dir packages/Windows
           gh run download "$ARTIFACT_RUN" --name JoyniteDesktop-Linux --dir packages/Linux
-      - name: Publish verified build artifacts
+          gh run download "$ARTIFACT_RUN" --name JoyniteDesktop-macOS-shared --dir packages/macOS-shared
+          gh run download "$NATIVE_RUN" --name Joynite --dir packages/macOS-native
+      - name: Generate complete update feeds and publish assets
         run: |
+          python3 scripts/generate-update-feeds.py packages --version "${RELEASE_TAG#v}"
           python3 - <<'PY'
-          import os, pathlib, subprocess
-          files = sorted(str(p) for p in pathlib.Path('packages').rglob('*') if p.is_file() and p.suffix in {'.exe', '.deb', '.AppImage'})
-          if len(files) != 3:
-              raise SystemExit('Expected one Windows installer and two Linux packages')
-          subprocess.run(['gh', 'release', 'view', os.environ['RELEASE_TAG']], check=True)
-          subprocess.run(['gh', 'release', 'upload', os.environ['RELEASE_TAG'], *files, '--clobber'], check=True)
+          import os,pathlib,subprocess
+          files=sorted(str(p) for p in pathlib.Path('packages').rglob('*') if p.is_file())
+          if not files:raise SystemExit('No signed artifacts found')
+          subprocess.run(['gh','release','upload',os.environ['RELEASE_TAG'],*files,'--clobber'],check=True)
           PY

@@ -320,6 +320,13 @@ async fn save_custom_metadata(
     .await
     .map_err(|e| e.to_string())?
 }
+#[tauri::command]
+fn update_checks_enabled() -> bool {
+    std::env::var("JOYNITE_OFFLINE")
+        .or_else(|_| std::env::var("PLAYNITE_OFFLINE"))
+        .as_deref()
+        != Ok("1")
+}
 fn main() {
     if std::env::args().any(|a| a == "--diagnostics") {
         if let Some(home) = dirs::home_dir() {
@@ -338,6 +345,8 @@ fn main() {
             }
         }))
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .plugin(
             tauri_plugin_autostart::Builder::new()
                 .app_name("Joynite")
@@ -359,6 +368,7 @@ fn main() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            update_checks_enabled,
             get_library,
             scan_games,
             hydrate_metadata,

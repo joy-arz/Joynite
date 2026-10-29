@@ -12,6 +12,8 @@
     "dialog:allow-ask",
     "autostart:allow-is-enabled",
     "autostart:allow-enable",
-    "autostart:allow-disable"
+    "autostart:allow-disable",
+    "updater:default",
+    "process:allow-restart"
   ]
 }

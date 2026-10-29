@@ -1,3 +1,13 @@
+## Joynite 0.5.0
+
+- Quiet background checks for official GitHub releases. A small top-right notice offers Update now, Update later, and Don’t remind me again for that version. Later snoozes 24 hours; newer releases bypass previous choices.
+- Signed in-app installation via Sparkle on native macOS and Tauri updater on shared Windows/Linux/macOS. Download begins only after Update now. Offline and service failures stay out of startup alerts.
+- Manual update checks in Settings. Update packages leave libraries, custom artwork, and game installations in place.
+- Fix native menu shortcut interception, focused update-button shortcut routing, and false success after custom metadata storage errors.
+- Add release-version consistency checks, same-commit artifact provenance checks, signed feed generation, and an improvement review.
+
+Version 0.4 users install 0.5 once manually to gain future in-app updates.
+
 ## Joynite 0.4.0
 
 - Rename the app, executable, package, repository, installer labels, and current documentation to Joynite. Original upstream code and license attribution remain intact.

@@ -17,9 +17,10 @@ import UniformTypeIdentifiers
 }
 struct JoyniteApplication: App {
     @StateObject private var model = LibraryModel()
+    @StateObject private var updater = SoftwareUpdater()
     var body: some Scene {
         WindowGroup("Joynite") {
-            LibraryView().environmentObject(model).frame(minWidth: 980, minHeight: 660)
+            LibraryView().environmentObject(model).environmentObject(updater).frame(minWidth: 980, minHeight: 660)
                 .preferredColorScheme(.dark)
                 .task {
                     await model.startup()
@@ -31,6 +32,7 @@ struct JoyniteApplication: App {
                     Button("Add games folder…", action: model.addFolder)
                     Button("Scan installed games") { Task { await model.scan() } }.keyboardShortcut("r").disabled(model.busy)
                 }
+                CommandGroup(after: .appInfo) { Button("Check for updates…") { Task { await updater.check(manual: true) } } }
                 CommandMenu("Library") {
                     Button("Find a game") { model.searchRequested += 1 }.keyboardShortcut("f")
                     Button("Show or hide libraries") { model.showLibrary.toggle() }.keyboardShortcut("l")
@@ -45,7 +47,7 @@ struct JoyniteApplication: App {
                     Button("Import and launch help") { model.showHelp = true }
                 }
             }
-        Settings { JoyniteSettingsView() }
+        Settings { JoyniteSettingsView().environmentObject(updater) }
     }
 }
 enum Palette {
@@ -56,6 +58,7 @@ enum Palette {
 }
 struct LibraryView: View {
     @EnvironmentObject private var model: LibraryModel
+    @EnvironmentObject private var updater: SoftwareUpdater
     @StateObject private var input = InputRouter()
     @Environment(\.accessibilityReduceMotion) private var reducedMotion
     @Environment(\.scenePhase) private var scenePhase
@@ -82,6 +85,8 @@ struct LibraryView: View {
                 }.frame(width: 340).background(Palette.sidebar.opacity(0.98)).overlay(alignment: .leading) { Rectangle().fill(.white.opacity(0.1)).frame(width: 1) }.frame(maxWidth: .infinity, alignment: .trailing).transition(.move(edge: .trailing))
             }
         }.background(Palette.canvas).tint(Palette.accent)
+            .overlay(alignment: .topTrailing) { SoftwareUpdateNotice().environmentObject(updater) }
+            .task { await updater.check() }
             .animation(reducedMotion ? nil : .easeInOut(duration: 0.22), value: model.showLibrary)
             .animation(reducedMotion ? nil : .easeInOut(duration: 0.22), value: model.showDetails)
             .alert("Joynite", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) { Button("OK") { model.error = nil } } message: { Text(model.error ?? "") }
@@ -90,7 +95,7 @@ struct LibraryView: View {
             .sheet(isPresented: $model.showHelp) { HelpSheet().environmentObject(model) }
             .sheet(isPresented: $model.showPublisherCatalog) { PublisherSheet().environmentObject(model) }
             .onAppear {
-                input.acceptsInput = { !model.showMetadata && !model.showHelp && !model.showPublisherCatalog && !model.showCustomMetadata && model.error == nil }
+                input.acceptsInput = { !updater.controlsFocused && !model.showMetadata && !model.showHelp && !model.showPublisherCatalog && !model.showCustomMetadata && model.error == nil }
                 input.perform = { action in
                     searchFocused = false
                     switch action {

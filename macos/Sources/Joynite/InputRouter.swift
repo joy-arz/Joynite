@@ -15,6 +15,7 @@ import SwiftUI
     private var monitors: [Any] = []
     private var observers: [NSObjectProtocol] = []
     private var repeatTask: Task<Void, Never>?
+    private var menuTracking = false
     private var shiftDown = false
     private var direction = 0
     private var lastScroll = Date.distantPast
@@ -32,6 +33,12 @@ import SwiftUI
         observers.append(NotificationCenter.default.addObserver(forName: NSApplication.didResignActiveNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.stopRepeat(); self?.pressedButtons.removeAll(); self?.shiftDown = false }
         })
+        observers.append(NotificationCenter.default.addObserver(forName: NSMenu.didBeginTrackingNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.menuTracking = true; self?.stopRepeat() }
+        })
+        observers.append(NotificationCenter.default.addObserver(forName: NSMenu.didEndTrackingNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.menuTracking = false }
+        })
         GCController.shouldMonitorBackgroundEvents = false
         configureControllers()
     }
@@ -44,7 +51,7 @@ import SwiftUI
     }
     private var textEntry: Bool { NSApp.keyWindow?.firstResponder is NSTextView }
     private var canAct: Bool {
-        NSApp.isActive && NSApp.keyWindow?.title == "Joynite" && NSApp.keyWindow?.attachedSheet == nil && (acceptsInput?() ?? true)
+        !menuTracking && NSApp.isActive && NSApp.keyWindow?.title == "Joynite" && NSApp.keyWindow?.attachedSheet == nil && (acceptsInput?() ?? true)
     }
     private func keyboard(_ event: NSEvent) -> NSEvent? {
         if event.type == .leftMouseDown || event.type == .mouseMoved { usingController = false; return event }

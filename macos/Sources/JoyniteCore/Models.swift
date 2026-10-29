@@ -119,6 +119,12 @@ public final class LibraryStorage {
         guard file.version == 1 else { throw LibraryError.invalid("Unsupported library version \(file.version).") }
         return file
     }
+    public func replacing(_ game: Game, in library: LibraryFile) throws -> LibraryFile {
+        guard let index = library.games.firstIndex(where: { $0.id == game.id }) else { throw LibraryError.invalid("Game no longer exists.") }
+        var next = library; next.games[index] = game
+        try save(next)
+        return next
+    }
     public func save(_ file: LibraryFile) throws {
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         let encoder = JSONEncoder(); encoder.outputFormatting = [.prettyPrinted, .sortedKeys]

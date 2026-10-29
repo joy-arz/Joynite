@@ -131,7 +131,7 @@ import UniformTypeIdentifiers
         if let key = imported["landscape"] { current.customLandscape = key }
         if let key = imported["background"] { current.customBackground = key }
         current.refreshMetadataSource()
-        update(current); cacheRevision += 1; status = "Custom metadata and artwork saved offline for \(current.name)."
+        library = try storage.replacing(current, in: library); ensureSelection(); cacheRevision += 1; status = "Custom metadata and artwork saved offline for \(current.name)."
     }
     func save() {
         guard writable else { error = "Library is read-only after a load failure. Restore library.json from library.json.backup in Application Support/Joynite and restart."; return }
@@ -139,8 +139,8 @@ import UniformTypeIdentifiers
     }
     func update(_ game: Game) {
         guard writable else { error = "Library is read-only. Restore its backup before making changes."; return }
-        guard let i = library.games.firstIndex(where: { $0.id == game.id }) else { return }
-        library.games[i] = game; ensureSelection(); save()
+        do { library = try storage.replacing(game, in: library); ensureSelection() }
+        catch { self.error = "Could not save game: \(error.localizedDescription)" }
     }
     func scan(fetchMetadata: Bool = true) async {
         guard !busy, writable else { return }

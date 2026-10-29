@@ -20,6 +20,7 @@ Five cards wrap continuously. The selected game is largest and centered, with it
 - **Automatic metadata.** Steam, GOG, itch.io, Epic/store-page matching, and bundled publisher metadata for Roblox, VALORANT, Genshin Impact, and more. Provider availability varies.
 - **Installed-game discovery.** Steam, Epic/Heroic manifests, native game applications, and Steam inside Wine, CrossOver, and Sikarugir/Wineskin prefixes. Each compatibility installation keeps its original runtime and prefix.
 - **Direct controls.** Arrow keys or A/D browse. Enter/Return launches immediately. Shift toggles details; L toggles libraries. Both sidebars start hidden. Hints follow the active keyboard or controller.
+- **Quiet updates.** Official GitHub releases are checked in the background. A small top-right notice offers Update now, Update later, or skipping that version. Downloads begin only on request and signatures are verified before installation.
 - **Launch at login.** An optional setting opens Joynite when you sign in on Windows, Linux, or macOS. It is off by default.
 - **Safer uninstall.** Confirmed native application removal uses Trash. Steam and other stores use their original uninstall flow; metadata remains until removal is confirmed. Disconnected disks do not trigger cleanup.
 - **Small implementation.** Native SwiftUI or Rust plus the system webview; no bundled browser or Node runtime. [Measurements and validation limits](AUDIT.md) describe what has actually been checked.
@@ -31,6 +32,12 @@ Five cards wrap continuously. The selected game is largest and centered, with it
 Open **Settings** in the app. On macOS, use **Joynite → Settings…** or Command-comma. The shared desktop edition also has a footer Settings button and Command/Ctrl-comma. Enable **Launch Joynite when I sign in** to opt in; disable it to remove the startup registration. A desktop session must be signed in before the app can open.
 
 Existing libraries from this fork’s previous Playnite-branded releases are copied into the Joynite data directory on first launch. Metadata, cached images, favorites, custom overrides, and history stay intact. Original data remains available as a recovery copy. The native and shared Mac editions keep separate library directories.
+
+## Software updates
+
+Update checks do not block library scanning or navigation. Offline launches stay quiet. **Update later** snoozes that release for 24 hours; **Don’t remind me again** skips it until a newer version is released. Use **Check for updates…** in Settings to check manually. Updates preserve the library and game installations.
+
+Version 0.4 users install 0.5 once manually to enable future in-app updates. See [signed update delivery](updates/README.md) and the [post-update review](IMPROVEMENTS.md).
 
 ## Build
 

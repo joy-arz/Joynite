@@ -68,6 +68,47 @@ final class CoreTests {
         XCTAssertNotNil(updated.metadataUpdated)
         XCTAssertThrowsError(try MetadataClient.parseSteam(Data(#"{"480":{"success":false}}"#.utf8), id: "480"))
     }
+    func testSoftwareUpdatesAndReminderPersistence() throws {
+        XCTAssertTrue(SoftwareVersion("0.10.0")! > SoftwareVersion("0.9.9")!)
+        XCTAssertEqual(SoftwareVersion("v1.2.3+build5")?.description, "1.2.3")
+        for invalid in ["", "garbage", "0.6.0-rc.1", "01.2.3", "1..2", "999999999999999999999.0.0"] { XCTAssertNil(SoftwareVersion(invalid)) }
+        let now = Date(timeIntervalSince1970: 2_000_000_000)
+        var reminder = UpdateReminder()
+        XCTAssertTrue(reminder.allows("0.6.0", now: now))
+        reminder.postpone("0.6.0", now: now)
+        XCTAssertFalse(reminder.allows("0.6.0", now: now.addingTimeInterval(60)))
+        XCTAssertTrue(reminder.allows("0.7.0", now: now))
+        XCTAssertTrue(reminder.allows("0.6.0", now: now.addingTimeInterval(86400)))
+        reminder.skip("0.6.0")
+        let restored = try JSONDecoder().decode(UpdateReminder.self, from: JSONEncoder().encode(reminder))
+        XCTAssertFalse(restored.allows("0.6.0", now: now.addingTimeInterval(90000)))
+        XCTAssertTrue(restored.allows("0.7.0", now: now))
+        let asset = "https://github.com/joy-arz/Joynite/releases/download/v0.6.0/"
+        let payload: [String: Any] = ["tag_name": "v0.6.0", "draft": false, "prerelease": false, "assets": [["name":"Joynite-0.6.0-arm64.zip","browser_download_url":asset + "Joynite-0.6.0-arm64.zip","size":1000],["name":"appcast.xml","browser_download_url":asset + "appcast.xml","size":500]]]
+        func release(_ payload: [String: Any]) throws -> SoftwareRelease { try JSONDecoder().decode(SoftwareRelease.self, from: JSONSerialization.data(withJSONObject: payload)) }
+        let valid = try release(payload)
+        XCTAssertEqual(valid.nativeUpdate(after: "0.5.0", architecture: "arm64")?.description, "0.6.0")
+        XCTAssertNil(valid.nativeUpdate(after: "0.6.0", architecture: "arm64"))
+        XCTAssertNil(valid.nativeUpdate(after: "0.5.0", architecture: "x86_64"))
+        var altered = payload; altered["prerelease"] = true
+        try XCTAssertNil(try release(altered).nativeUpdate(after: "0.5.0", architecture: "arm64"))
+        altered = payload; altered["assets"] = [["name":"Joynite-0.6.0-arm64.zip","browser_download_url":"https://evil.invalid/app.zip","size":1000]]
+        try XCTAssertNil(try release(altered).nativeUpdate(after: "0.5.0", architecture: "arm64"))
+    }
+    func testGameEditCommitReportsStorageFailure() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let blocked = root.appendingPathComponent("not-a-directory"); try Data("blocked".utf8).write(to: blocked)
+        let original = Game(id: "fixture", name: "Before", store: .local, launchKind: .application, launchTarget: "/game.app")
+        var edited = original; edited.name = "After"
+        let library = LibraryFile(games: [original])
+        XCTAssertThrowsError(try LibraryStorage(url: blocked.appendingPathComponent("library.json")).replacing(edited, in: library))
+        XCTAssertEqual(library.games, [original])
+        let storage = LibraryStorage(url: root.appendingPathComponent("library.json"))
+        let committed = try storage.replacing(edited, in: library)
+        try XCTAssertEqual(try storage.load().games, committed.games)
+    }
     func testJoyniteMigrationAndIdentity() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
@@ -281,6 +322,8 @@ private func XCTAssertThrowsError<T>(_ value: @autoclosure () throws -> T, line:
             ("Steam installed-state bitmask and directory checks", suite.testSteamDiscoveryChecksInstalledBitAndDirectory),
             ("Atomic persistence, backup, corrupt library handling", suite.testPersistenceRoundTripAndBackup),
             ("Steam metadata preserves launch identity", suite.testSteamMetadataDoesNotAlterLaunchOrFavorite),
+            ("Release filtering, version ordering, reminder persistence", suite.testSoftwareUpdatesAndReminderPersistence),
+            ("Game edit commits surface storage failures", suite.testGameEditCommitReportsStorageFailure),
             ("Joynite migration retains offline media and metadata; self-exclusion", suite.testJoyniteMigrationAndIdentity),
             ("Custom overrides, refresh, serialization, automatic reset", suite.testCustomMetadataSurvivesRefreshAndReset),
             ("Store HTML, entities, relative artwork, host validation", suite.testStoreHTMLAttributeOrderAndEntities),

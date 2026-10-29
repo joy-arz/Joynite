@@ -28,6 +28,7 @@ import SwiftUI
 }
 struct JoyniteSettingsView: View {
     @StateObject private var startup = StartupSettings()
+    @EnvironmentObject private var updater: SoftwareUpdater
     @Environment(\.scenePhase) private var phase
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -38,6 +39,9 @@ struct JoyniteSettingsView: View {
             if startup.requiresApproval { Text("Allow Joynite in Login Items to finish enabling startup launch.").foregroundStyle(Palette.accent) }
             if let error = startup.error { Text(error).font(.callout).foregroundStyle(Palette.accent) }
             Button("Open macOS Login Items…") { startup.openLoginItems() }
+            Divider()
+            Text(updater.lastCheck).font(.callout).foregroundStyle(.secondary)
+            Button("Check for updates…") { Task { await updater.check(manual: true) } }
             Divider()
             KofiSupportButton()
         }.padding(28).frame(width: 480).tint(Palette.accent).preferredColorScheme(.dark)
