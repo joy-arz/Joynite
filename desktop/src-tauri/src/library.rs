@@ -565,6 +565,7 @@ pub fn enrich(state: &AppState, id: &str, source: Option<&str>) -> Result<(), St
                 summary: publisher.summary,
                 developer: publisher.developer,
                 artwork: publisher.artwork,
+                background: publisher.background,
                 url: publisher.url,
                 source: publisher.source,
                 genres: publisher.genres,

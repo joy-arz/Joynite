@@ -17,6 +17,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Validate release configuration and feed generation
         run: |
+          python scripts/sync-publisher-catalog.py
           python scripts/validate-release-config.py
           python scripts/test-update-feeds.py
       - name: Validate core behavior

@@ -18,15 +18,26 @@ pub struct Publisher {
     pub url: String,
     pub source: String,
     pub artwork: String,
+    #[serde(default)]
+    pub background: String,
     pub genres: Vec<String>,
 }
+fn publisher_catalog() -> &'static [Publisher] {
+    static CATALOG: OnceLock<Vec<Publisher>> = OnceLock::new();
+    CATALOG.get_or_init(|| {
+        serde_json::from_str(include_str!("../publishers.json"))
+            .expect("validated bundled publisher catalog")
+    })
+}
 pub fn publishers() -> Vec<Publisher> {
-    serde_json::from_str(include_str!("../publishers.json")).unwrap_or_default()
+    publisher_catalog().to_vec()
 }
 pub fn publisher(name: &str) -> Option<Publisher> {
-    publishers()
-        .into_iter()
-        .find(|p| p.aliases.iter().any(|a| normalized(a) == normalized(name)))
+    let name = normalized(name);
+    publisher_catalog()
+        .iter()
+        .find(|p| p.aliases.iter().any(|a| normalized(a) == name))
+        .cloned()
 }
 #[derive(Clone, Default, Serialize)]
 pub struct Details {
@@ -89,6 +100,12 @@ pub fn allowed(host: &str) -> bool {
     ]
     .iter()
     .any(|d| host == *d || host.ends_with(&format!(".{d}")))
+        || publisher_catalog().iter().any(|p| {
+            reqwest::Url::parse(&p.url)
+                .ok()
+                .and_then(|url| url.host_str().map(String::from))
+                .is_some_and(|domain| host == domain || host.ends_with(&format!(".{domain}")))
+        })
 }
 pub struct Client {
     http: reqwest::blocking::Client,
@@ -184,14 +201,18 @@ impl Client {
                 summary: entry.summary,
                 developer: entry.developer,
                 artwork: entry.artwork,
+                background: entry.background,
                 url: entry.url,
                 source: entry.source,
                 genres: entry.genres,
                 ..Default::default()
             };
             if let Ok(remote) = self.page(&data.url) {
-                if !remote.artwork.is_empty() {
+                if data.artwork.is_empty() && !remote.artwork.is_empty() {
                     data.artwork = remote.artwork
+                }
+                if data.background.is_empty() && !remote.background.is_empty() {
+                    data.background = remote.background;
                 }
             }
             return Ok(data);
@@ -339,7 +360,10 @@ impl Client {
             }
         }
         if game.cached_artwork.is_none() {
-            game.cached_artwork = game.cached_landscape.clone()
+            game.cached_artwork = game.cached_landscape.clone();
+            if game.cached_artwork.is_none() && !game.artwork.is_empty() {
+                game.cached_artwork = self.cache(&game.artwork, root, &game.id, "any").ok();
+            }
         }
         if let Some(background) = &game.background_artwork {
             if !background.is_empty() {
@@ -606,11 +630,65 @@ mod tests {
         assert!(game.background_artwork.is_some());
     }
     #[test]
+    fn square_publisher_artwork_remains_available_offline() {
+        let root = tempfile::tempdir().unwrap();
+        let mut game = Game {
+            id: "publisher-logo".into(),
+            artwork: "cached-only-fixture".into(),
+            ..Default::default()
+        };
+        let key = hash(&game.artwork) + ".png";
+        let folder = root.path().join("Media").join(hash(&game.id));
+        fs::create_dir_all(&folder).unwrap();
+        image::RgbaImage::new(128, 128)
+            .save(folder.join(&key))
+            .unwrap();
+        let client = Client::new().unwrap();
+        client.artwork(&mut game, root.path());
+        assert_eq!(game.cached_artwork, Some(key));
+        assert!(cache_file(root.path(), &game, &game.cached_artwork).is_some());
+    }
+    #[test]
     fn publisher_offline() {
-        for name in ["Roblox", "Valorant", "Genshin Impact"] {
+        for name in [
+            "Roblox",
+            "Valorant",
+            "Genshin Impact",
+            "EDOPro",
+            "YGOPro",
+            "YGOPro Percy",
+            "YGOPro 2",
+            "KoishiPro",
+            "YGO Omega",
+            "MDPro3",
+        ] {
             assert!(!publisher(name).unwrap().summary.is_empty())
         }
         assert!(publisher("Roblox fake").is_none());
+        for (name, id) in [
+            ("edopro.exe", "edopro"),
+            ("Project Ignis", "edopro"),
+            ("ygopro_percy.exe", "ygopro-percy"),
+            ("ygopro2", "ygopro2"),
+            ("Koishi Pro", "koishipro"),
+            ("YGO Omega (Mac)", "ygo-omega"),
+            ("mdpro3.exe", "mdpro3"),
+        ] {
+            assert_eq!(publisher(name).unwrap().id, id);
+        }
+        for name in [
+            "EDOPro Installer",
+            "YGOPro Soundtrack",
+            "YGOPro 2 Server",
+            "YGO Omega Server",
+            "MDPro30",
+            "KoishiPro 2",
+        ] {
+            assert!(publisher(name).is_none(), "{name}");
+        }
+        assert!(allowed("projectignis.github.io"));
+        assert!(allowed("cli.koishi.pro"));
+        assert!(!allowed("projectignis.github.io.evil.example"));
         assert!(!allowed("gog.com.evil.example"));
     }
     #[test]

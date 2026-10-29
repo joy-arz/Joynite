@@ -9,7 +9,7 @@
     "summary": "Explore experiences made by a worldwide community, play with friends, and create your own worlds on Roblox.",
     "developer": "Roblox Corporation",
     "url": "https://www.roblox.com/",
-    "source": "Roblox \u00b7 publisher catalog",
+    "source": "Roblox · publisher catalog",
     "artwork": "https://images.rbxcdn.com/5348266ea6c5e67b19d6a814cbbb70f6.jpg",
     "genres": [
       "Multiplayer",
@@ -27,7 +27,7 @@
     "summary": "A competitive five-versus-five tactical shooter pairing precise gunplay with agents and their distinct abilities.",
     "developer": "Riot Games",
     "url": "https://playvalorant.com/en-us/",
-    "source": "Riot Games \u00b7 publisher catalog",
+    "source": "Riot Games · publisher catalog",
     "artwork": "",
     "genres": [
       "Tactical shooter",
@@ -39,13 +39,13 @@
     "aliases": [
       "Genshin Impact",
       "GenshinImpact",
-      "\u539f\u795e"
+      "原神"
     ],
     "name": "Genshin Impact",
     "summary": "Explore Teyvat in an open-world action RPG. Build a party, combine elemental abilities, and follow the Traveler's journey.",
     "developer": "HoYoverse",
     "url": "https://genshin.hoyoverse.com/en/",
-    "source": "HoYoverse \u00b7 publisher catalog",
+    "source": "HoYoverse · publisher catalog",
     "artwork": "",
     "genres": [
       "Action RPG",
@@ -63,7 +63,7 @@
     "summary": "Travel aboard the Astral Express in a space-fantasy RPG with turn-based combat and a growing cast of companions.",
     "developer": "HoYoverse",
     "url": "https://hsr.hoyoverse.com/en-us/",
-    "source": "HoYoverse \u00b7 publisher catalog",
+    "source": "HoYoverse · publisher catalog",
     "artwork": "",
     "genres": [
       "Turn-based RPG",
@@ -80,7 +80,7 @@
     "summary": "Navigate New Eridu and its dangerous Hollows in an urban action RPG built around squad-based combat.",
     "developer": "HoYoverse",
     "url": "https://zenless.hoyoverse.com/en-us/",
-    "source": "HoYoverse \u00b7 publisher catalog",
+    "source": "HoYoverse · publisher catalog",
     "artwork": "",
     "genres": [
       "Action RPG"
@@ -97,7 +97,7 @@
     "summary": "Two teams of five champions compete to break through their opponents' defenses and destroy the enemy Nexus.",
     "developer": "Riot Games",
     "url": "https://www.leagueoflegends.com/en-us/",
-    "source": "Riot Games \u00b7 publisher catalog",
+    "source": "Riot Games · publisher catalog",
     "artwork": "",
     "genres": [
       "MOBA",
@@ -116,12 +116,161 @@
     "summary": "Build, explore, and survive in a world made of blocks. Play creatively or gather resources and venture into the unknown.",
     "developer": "Mojang Studios",
     "url": "https://www.minecraft.net/en-us",
-    "source": "Mojang Studios \u00b7 publisher catalog",
+    "source": "Mojang Studios · publisher catalog",
     "artwork": "",
     "genres": [
       "Sandbox",
       "Survival",
       "Creation"
+    ]
+  },
+  {
+    "id": "edopro",
+    "aliases": [
+      "EDOPro",
+      "EDO Pro",
+      "Project Ignis",
+      "Project Ignis EDOPro",
+      "EDOPro (macOS)",
+      "edopro.exe"
+    ],
+    "name": "EDOPro",
+    "summary": "An open-source Yu-Gi-Oh! duel simulator from Project Ignis, with automated card effects, deck building, replays, and AI opponents.",
+    "developer": "Project Ignis",
+    "url": "https://projectignis.github.io/",
+    "artwork": "https://projectignis.github.io/assets/img/ignis_logo.png",
+    "background": "",
+    "source": "EDOPro · project catalog",
+    "genres": [
+      "Card game",
+      "Strategy",
+      "Yu-Gi-Oh!"
+    ]
+  },
+  {
+    "id": "ygopro",
+    "aliases": [
+      "YGOPro",
+      "YGO Pro",
+      "ygopro.exe"
+    ],
+    "name": "YGOPro",
+    "summary": "The open-source Yu-Gi-Oh! duel simulator built around the ocgcore rules engine, scripted card effects, deck editing, and network play. Features vary between client builds.",
+    "developer": "Fluorohydride and YGOPro contributors",
+    "url": "https://github.com/Fluorohydride/ygopro",
+    "artwork": "https://raw.githubusercontent.com/Fluorohydride/ygopro/master/textures/bg_menu.jpg",
+    "background": "https://raw.githubusercontent.com/Fluorohydride/ygopro/master/textures/bg_deck.jpg",
+    "source": "YGOPro · project catalog",
+    "genres": [
+      "Card game",
+      "Strategy",
+      "Yu-Gi-Oh!"
+    ]
+  },
+  {
+    "id": "ygopro-percy",
+    "aliases": [
+      "YGOPro Percy",
+      "YGO Pro Percy",
+      "YGOPRO-Percy",
+      "ygopro_percy.exe"
+    ],
+    "name": "YGOPro Percy",
+    "summary": "A legacy community-maintained YGOPro client for automated Yu-Gi-Oh! duels and deck building. Its former maintainers now develop EDOPro as Project Ignis.",
+    "developer": "YGOPro Percy team",
+    "url": "https://projectignis.github.io/faq.html",
+    "artwork": "https://raw.githubusercontent.com/Fluorohydride/ygopro/master/textures/bg_menu.jpg",
+    "background": "https://raw.githubusercontent.com/Fluorohydride/ygopro/master/textures/bg.jpg",
+    "source": "YGOPro Percy · project catalog",
+    "genres": [
+      "Card game",
+      "Strategy",
+      "Yu-Gi-Oh!"
+    ]
+  },
+  {
+    "id": "ygopro2",
+    "aliases": [
+      "YGOPro 2",
+      "YGOPro2",
+      "YGO Pro 2",
+      "ygopro2.exe"
+    ],
+    "name": "YGOPro 2",
+    "summary": "A Unity-based Yu-Gi-Oh! simulator using the YGOPro protocol, with a graphical duel field, deck building, and automated card resolution.",
+    "developer": "YGOPro 2 contributors",
+    "url": "https://github.com/N-Field/ygopro2",
+    "artwork": "https://raw.githubusercontent.com/N-Field/ygopro2/Android/Assets/ic_icon.png",
+    "background": "",
+    "source": "YGOPro 2 · project catalog",
+    "genres": [
+      "Card game",
+      "Strategy",
+      "Yu-Gi-Oh!"
+    ]
+  },
+  {
+    "id": "koishipro",
+    "aliases": [
+      "KoishiPro",
+      "Koishi Pro",
+      "koishipro.exe"
+    ],
+    "name": "KoishiPro",
+    "summary": "A YGOPro-based Yu-Gi-Oh! duel simulator with automated card effects, deck editing, replays, and community-maintained client features.",
+    "developer": "KoishiPro contributors",
+    "url": "https://koishi.pro/koishipro/",
+    "artwork": "https://koishi.pro/wp-content/uploads/2019/07/ygopro.jpg",
+    "background": "https://koishi.pro/wp-content/uploads/2019/07/deck.jpg",
+    "source": "KoishiPro · project catalog",
+    "genres": [
+      "Card game",
+      "Strategy",
+      "Yu-Gi-Oh!"
+    ]
+  },
+  {
+    "id": "ygo-omega",
+    "aliases": [
+      "YGO Omega",
+      "YGOOmega",
+      "YGO Omega (Mac)",
+      "YGO Omega Launcher",
+      "OmegaUpdater",
+      "YGO Omega.exe"
+    ],
+    "name": "YGO Omega",
+    "summary": "A Yu-Gi-Oh! simulator from Duelists Unite with automatic and manual play, a deck editor, ranked duels, and tournament features.",
+    "developer": "Duelists Unite",
+    "url": "https://omega.duelistsunite.org/",
+    "artwork": "https://omega.duelistsunite.org/assets/images/omega-logo-large.png",
+    "background": "",
+    "source": "YGO Omega · project catalog",
+    "genres": [
+      "Card game",
+      "Strategy",
+      "Yu-Gi-Oh!"
+    ]
+  },
+  {
+    "id": "mdpro3",
+    "aliases": [
+      "MDPro3",
+      "MD Pro 3",
+      "MDPro 3",
+      "MDPro3.exe"
+    ],
+    "name": "MDPro3",
+    "summary": "A Unity-based Yu-Gi-Oh! simulator in the YGOPro family, with deck building and automated duels presented through a Master Duel-style interface.",
+    "developer": "MDPro3 contributors",
+    "url": "https://code.moenext.com/sherry_chaos/MDPro3",
+    "artwork": "",
+    "background": "",
+    "source": "MDPro3 · project catalog",
+    "genres": [
+      "Card game",
+      "Strategy",
+      "Yu-Gi-Oh!"
     ]
   }
 ]

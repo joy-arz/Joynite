@@ -106,3 +106,7 @@ A background check runs after startup without blocking your library. A new offic
 ## Search
 
 Press **Space** (or Command-F) to expand search into the center. Matching ignores case and accents and offers the closest titles for misspellings. Enter selects the best result and returns the field to the header; it does not launch the game. Press Enter again to play. Escape cancels. Tab and Shift-Tab do not move focus in the library, while settings/editor forms retain standard navigation. Large-library search runs off the main thread, with stale results discarded.
+
+## Yu-Gi-Oh! project metadata
+
+EDOPro / Project Ignis, YGOPro, legacy YGOPro Percy, YGOPro 2, KoishiPro, YGO Omega and MDPro3 have bundled descriptions, developers, genres, and project links. Recognized application names are included in startup discovery. Use the publisher catalog to attach a chosen entry manually when an installation has a different name. Text is available offline; available project artwork downloads into the same persistent cache. Custom overrides stay in place.

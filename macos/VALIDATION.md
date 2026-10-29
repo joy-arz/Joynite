@@ -1,5 +1,9 @@
 # Joynite validation record
 
+## Version 0.6.1 — 2026-10-29
+
+243 native assertions without live-provider checks, including seven Yu-Gi-Oh! catalog entries, executable/client aliases, unrelated-name rejection, supported-host boundaries, and preservation of custom text/artwork/favorites/launch paths. Shared core: 18 tests, including cached square-logo retention; the separate scale benchmark remains ignored in the normal test run. Six curated project-art URLs returned valid images during this update; MDPro3 retains native app-icon/custom-art fallback. Native/shared catalog generation and release/feed checks pass. No new validation application bundle was needed for this metadata change.
+
 ## Version 0.6.0 — 2026-10-29
 
 Search and backup validation: 181 native assertions with live metadata providers (171 without the live-provider checks), plus shared backup/search/update failure tests. The native UI confirmed Tab cannot trap navigation, Space expands/focuses search, inkriotion and INSCRYPTION find Inscryption, Enter collapses search without launching, and arrows resume afterward. Mindustry's main menu was observed after a launch from Joynite. Sikarugir process startup was observed separately; its game window was not exposed to UI automation. See ../docs/VALIDATION-MATRIX.md and ../IMPROVEMENTS.md for exact boundaries and performance measurements.

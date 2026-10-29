@@ -312,6 +312,7 @@ fn scan_apps(
             if all
                 || wrapper.is_some()
                 || category.contains("games")
+                || crate::metadata::publisher(&name).is_some()
                 || [
                     "roblox",
                     "minecraft",

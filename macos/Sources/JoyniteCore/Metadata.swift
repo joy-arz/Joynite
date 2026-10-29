@@ -10,7 +10,7 @@ public actor MetadataClient {
     public init(session: URLSession = .shared) { self.session = session }
     private func request(_ url: URL) async throws -> Data {
         guard (ProcessInfo.processInfo.environment["JOYNITE_OFFLINE"] ?? ProcessInfo.processInfo.environment["PLAYNITE_OFFLINE"]) != "1" else { throw LibraryError.invalid("Offline mode: saved metadata remains available.") }
-        guard url.scheme == "https", Self.allowedHost(url.host ?? "") else { throw LibraryError.invalid("Use an HTTPS Steam, GOG, Epic Games, or itch.io store page.") }
+        guard url.scheme == "https", Self.allowedHost(url.host ?? "") else { throw LibraryError.invalid("Use an HTTPS store page or a supported project/publisher page.") }
         var request = URLRequest(url: url, cachePolicy: .returnCacheDataElseLoad, timeoutInterval: 20)
         request.setValue("Joynite/0.4 (+https://github.com/joy-arz/Joynite)", forHTTPHeaderField: "User-Agent")
         let (data, response) = try await session.data(for: request)
@@ -21,7 +21,11 @@ public actor MetadataClient {
         return data
     }
     public static func allowedHost(_ host: String) -> Bool {
-        ["steampowered.com", "gog.com", "epicgames.com", "itch.io", "roblox.com", "playvalorant.com", "hoyoverse.com", "leagueoflegends.com", "minecraft.net"].contains { host == $0 || host.hasSuffix("." + $0) }
+        let standard = ["steampowered.com", "gog.com", "epicgames.com", "itch.io", "roblox.com", "playvalorant.com", "hoyoverse.com", "leagueoflegends.com", "minecraft.net"].contains { host == $0 || host.hasSuffix("." + $0) }
+        return standard || PublisherCatalog.games.contains { entry in
+            guard let domain = URL(string: entry.metadata.url)?.host else { return false }
+            return host == domain || host.hasSuffix("." + domain)
+        }
     }
     public func search(_ name: String) async throws -> [SearchMatch] {
         var components = URLComponents(string: "https://store.steampowered.com/api/storesearch/")!
@@ -53,8 +57,8 @@ public actor MetadataClient {
     public func publisher(_ entry: PublisherGame) async -> Metadata {
         var details = entry.metadata
         if let remote = try? await page(details.url) {
-            if !remote.artwork.isEmpty { details.artwork = remote.artwork }
-            if !remote.background.isEmpty { details.background = remote.background }
+            if details.artwork.isEmpty && !remote.artwork.isEmpty { details.artwork = remote.artwork }
+            if details.background.isEmpty && !remote.background.isEmpty { details.background = remote.background }
         }
         return details
     }

@@ -270,7 +270,7 @@ final class CoreTests {
         XCTAssertEqual(Metadata(summary: "").applying(to: updated).summary, "Saved description")
     }
     func testPublisherMetadataWithoutNetwork() {
-        for title in ["Roblox", "Valorant", "Genshin Impact", "Honkai: Star Rail", "Zenless Zone Zero", "League of Legends", "Minecraft Launcher"] {
+        for title in ["Roblox", "Valorant", "Genshin Impact", "Honkai: Star Rail", "Zenless Zone Zero", "League of Legends", "Minecraft Launcher", "EDOPro", "YGOPro", "YGOPro Percy", "YGOPro 2", "KoishiPro", "YGO Omega", "MDPro3"] {
             let entry = PublisherCatalog.match(title)
             XCTAssertNotNil(entry)
             XCTAssertFalse(entry?.metadata.summary.isEmpty ?? true)
@@ -278,6 +278,24 @@ final class CoreTests {
         }
         XCTAssertNil(PublisherCatalog.match("Roblox Fake Game"))
         XCTAssertNil(PublisherCatalog.match("Genshin Impact Soundtrack"))
+        for (alias, id) in [("edopro.exe", "edopro"), ("Project Ignis", "edopro"), ("ygopro_percy.exe", "ygopro-percy"), ("YGOPro2", "ygopro2"), ("Koishi Pro", "koishipro"), ("YGO Omega (Mac)", "ygo-omega"), ("mdpro3.exe", "mdpro3")] { XCTAssertEqual(PublisherCatalog.match(alias)?.id, id) }
+        for name in ["EDOPro Installer", "YGOPro Soundtrack", "YGOPro 2 Server", "YGO Omega Server", "MDPro30", "KoishiPro 2"] { XCTAssertNil(PublisherCatalog.match(name)) }
+        XCTAssertTrue(MetadataClient.allowedHost("projectignis.github.io"))
+        XCTAssertTrue(MetadataClient.allowedHost("cli.koishi.pro"))
+        XCTAssertFalse(MetadataClient.allowedHost("projectignis.github.io.evil.example"))
+        for name in ["EDOPro", "YGOPro", "YGOPro Percy", "YGOPro 2", "KoishiPro", "YGO Omega", "MDPro3"] {
+            if let entry = PublisherCatalog.match(name) {
+                var game = Game(id: "project-test", name: name, store: .local, launchKind: .application, launchTarget: "/fixture/Game.app")
+                game.favorite = true; game.customArtwork = "custom-cover.png"
+                game.applyCustomMetadata(changes: ["summary": "My offline notes"])
+                let updated = entry.metadata.applying(to: game)
+                XCTAssertEqual(updated.launchTarget, game.launchTarget)
+                XCTAssertEqual(updated.summary, "My offline notes")
+                XCTAssertEqual(updated.customArtwork, "custom-cover.png")
+                XCTAssertTrue(updated.favorite)
+                XCTAssertEqual(updated.developer, entry.metadata.developer)
+            }
+        }
     }
     func testUninstallPlansAndDisconnectedVolumes() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).resolvingSymlinksInPath()

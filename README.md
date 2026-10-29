@@ -17,7 +17,7 @@ Five cards wrap continuously. The selected game is largest and centered, with it
 ## Features
 
 - **Offline first.** Descriptions, developers, genres, dates, favorites, and artwork remain on disk across restarts. Custom text and three independent image overrides survive automatic refresh.
-- **Automatic metadata.** Steam, GOG, itch.io, Epic/store-page matching, and bundled publisher metadata for Roblox, VALORANT, Genshin Impact, and more. Provider availability varies.
+- **Automatic metadata.** Steam, GOG, itch.io, Epic/store-page matching, and bundled publisher metadata for Roblox, VALORANT, Genshin Impact, EDOPro, YGOPro/Percy, YGOPro 2, KoishiPro, YGO Omega, MDPro3, and more. Provider availability varies.
 - **Installed-game discovery.** Steam, Epic/Heroic manifests, native game applications, and Steam inside Wine, CrossOver, and Sikarugir/Wineskin prefixes. Each compatibility installation keeps its original runtime and prefix.
 - **Fast search.** Space expands search into the center. Enter selects a case-insensitive, typo-tolerant match and returns to browsing. Tab cannot trap the library in search.
 - **Portable backups.** Export metadata and available cached/custom artwork as a ZIP; restore verifies the manifest and hashes and keeps existing game edits.

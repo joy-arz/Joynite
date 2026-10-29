@@ -1,3 +1,10 @@
+## Joynite 0.6.1
+
+- Add bundled metadata for EDOPro / Project Ignis, YGOPro, YGOPro Percy, YGOPro 2, KoishiPro, YGO Omega and MDPro3. Explicit client/executable aliases keep related simulators distinct.
+- Add project image URLs where suitable assets are available; preserve curated images over generic page previews. Square logos now also enter the shared edition's offline artwork cache.
+- Recognize catalog games during shared Mac application discovery. Custom metadata and image overrides remain authoritative.
+- Generate the native catalog from the shared JSON source and validate catalog consistency in CI.
+
 ## Joynite 0.6.0
 
 - Space opens a smoothly expanding center search. Enter selects the best match and returns to the carousel without launching it; a subsequent Enter plays. Escape cancels. Tab no longer moves focus into search from the library.
