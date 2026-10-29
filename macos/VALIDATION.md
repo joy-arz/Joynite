@@ -2,7 +2,7 @@
 
 ## Version 0.5.0 — 2026-10-29
 
-167 live / 157 offline core assertions; 15 shared Rust tests; 9 frontend tests including real notification DOM with mocked platform IPC; 3 release-feed tests. Native ZIP signing includes actual archive signature verification. The updater UI is checked with a validation-only preview and a copied offline library, without publishing fake releases.
+167 live / 157 offline core assertions; 15 shared Rust tests; 9 frontend tests including real notification DOM with mocked platform IPC; 3 release-feed tests. Native ZIP signing includes actual archive signature verification. The updater UI is checked with a validation-only preview and a copied offline library, without publishing fake releases. Update later stayed dismissed after reopening; a manual check could show it again. Skipping 0.6.0 stayed dismissed after reopening, and a simulated 0.7.0 notification appeared without clearing the old preference.
 
 The review and remaining device/installation test limits are in ../IMPROVEMENTS.md. Version 0.4 and earlier history follows.
 

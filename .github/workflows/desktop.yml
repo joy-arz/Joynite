@@ -84,7 +84,7 @@ jobs:
           codesign --force --deep --sign - 'desktop/src-tauri/target/release/bundle/macos/Joynite.app'
           codesign --verify --deep --strict 'desktop/src-tauri/target/release/bundle/macos/Joynite.app'
           tar -czf 'desktop/src-tauri/target/release/bundle/macos/Joynite.app.tar.gz' -C desktop/src-tauri/target/release/bundle/macos Joynite.app
-          if [ -n "$TAURI_SIGNING_PRIVATE_KEY" ]; then npm run tauri --prefix desktop -- signer sign 'desktop/src-tauri/target/release/bundle/macos/Joynite.app.tar.gz'; fi
+          if [ -n "$TAURI_SIGNING_PRIVATE_KEY" ]; then npm run tauri --prefix desktop -- signer sign "$PWD/desktop/src-tauri/target/release/bundle/macos/Joynite.app.tar.gz"; fi
           python3 -c 'import platform,json;open("desktop/updater-platform.json","w").write(json.dumps({"platform":"darwin-"+("aarch64" if platform.machine()=="arm64" else "x86_64")}))'
           ditto -c -k --sequesterRsrc --keepParent 'desktop/src-tauri/target/release/bundle/macos/Joynite.app'  'desktop/JoyniteDesktop-macOS.zip'
       - uses: actions/upload-artifact@v4
