@@ -9,7 +9,7 @@ SOURCE = ROOT / 'desktop/src-tauri/publishers.json'
 TARGET = ROOT / 'macos/Sources/JoyniteCore/PublisherCatalog.swift'
 
 def rendered():
-    entries = json.loads(SOURCE.read_text())
+    entries = json.loads(SOURCE.read_text(encoding='utf-8'))
     ids, aliases = set(), set()
     def quote(value):
         return json.dumps(value, ensure_ascii=False)
@@ -56,7 +56,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
     expected = rendered()
     if args.write:
-        TARGET.write_text(expected)
-    elif TARGET.read_text() != expected:
+        TARGET.write_text(expected, encoding='utf-8')
+    elif TARGET.read_text(encoding='utf-8') != expected:
         raise SystemExit('Native catalog is out of sync. Run python3 scripts/sync-publisher-catalog.py --write')
     print('Native/shared publisher catalogs match.')
