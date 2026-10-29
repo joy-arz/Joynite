@@ -735,3 +735,40 @@ mod joynite_migration_tests {
         assert!(!crate::model::is_launcher_id("com.game.inscryption"));
     }
 }
+#[cfg(test)]
+mod performance_tests {
+    use super::*;
+    #[test]
+    #[ignore]
+    fn large_library_profile() {
+        for count in [1000, 10000] {
+            let root = tempfile::tempdir().unwrap();
+            let games = (0..count)
+                .map(|i| Game {
+                    id: format!("benchmark-{i}"),
+                    name: format!("Game {i} Adventure"),
+                    ..Default::default()
+                })
+                .collect();
+            let store = Store {
+                library: Library {
+                    games,
+                    ..Default::default()
+                },
+                root: root.path().to_path_buf(),
+                error: None,
+                notices: vec![],
+                revision: 1,
+            };
+            let start = std::time::Instant::now();
+            let snapshot = store.snapshot();
+            let snapshot_ms = start.elapsed().as_secs_f64() * 1000.0;
+            let start = std::time::Instant::now();
+            let bytes = serde_json::to_vec(&snapshot).unwrap();
+            let json_ms = start.elapsed().as_secs_f64() * 1000.0;
+            let start = std::time::Instant::now();
+            save_library(root.path(), &store.library).unwrap();
+            println!("BENCH shared count={count} snapshot_ms={snapshot_ms:.2} serialize_ms={json_ms:.2} save_ms={:.2} bytes={}",start.elapsed().as_secs_f64()*1000.0,bytes.len());
+        }
+    }
+}

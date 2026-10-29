@@ -65,3 +65,9 @@ Joynite migrates earlier libraries without deleting their originals. Legacy data
 ## Quiet software updates
 
 A background check runs after startup without blocking your library. A new official release appears in a small top-right notice. Update now downloads and verifies the signed package before installation. Update later snoozes that version for 24 hours. Don’t remind me again skips only that version; newer releases can notify again. Offline failures stay silent. Settings includes a manual check. Libraries, cached artwork, and game installations are not replaced by app updates. Version 0.4 needs one manual install of 0.5 to gain this feature. See ../updates/README.md and ../IMPROVEMENTS.md.
+
+## Search and portable backups
+
+Press Space or Command/Ctrl-F for the expanding center search. Enter selects the best match and returns to the carousel. Matching ignores case/accents and tolerates misspellings; suggestions stay within the active library filter. Escape cancels. Library Tab traversal is disabled; dialog forms keep normal focus behavior. Large-library queries run in a Web Worker, and stale results are discarded.
+
+Add / manage provides **Back up library and images** and **Restore library backup**. ZIP backups include metadata and available cached/custom images with a versioned SHA-256 manifest. Restore validates all entries before merging and preserves existing edits. Legacy JSON imports remain supported. Launch paths can need re-adding on another computer.

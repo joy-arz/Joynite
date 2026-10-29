@@ -62,6 +62,7 @@ import SwiftUI
                   event.modifierFlags.intersection([.command, .option, .control]).isEmpty else { return event }
             usingController = false; perform?(.info); return event
         }
+        if canAct, event.type == .keyDown, event.keyCode == 48 { return nil }
         guard canAct, !textEntry else { return event }
         if event.type == .scrollWheel {
             guard abs(event.scrollingDeltaX) > abs(event.scrollingDeltaY), abs(event.scrollingDeltaX) > 3 else { return event }
@@ -71,6 +72,7 @@ import SwiftUI
         guard event.type == .keyDown, event.modifierFlags.intersection([.command, .option, .control]).isEmpty else { return event }
         let action: Action?
         switch event.keyCode {
+        case 49: action = event.isARepeat ? nil : .search
         case 123, 0: action = .previous
         case 124, 2: action = .next
         case 36, 76: action = event.isARepeat ? nil : .launch

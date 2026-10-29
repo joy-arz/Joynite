@@ -774,3 +774,76 @@ form button,
 #update-check {
   color: var(--orange);
 }
+
+.search {
+  position: absolute;
+  right: 240px;
+  top: 22px;
+  width: 230px;
+  z-index: 25;
+  transition:
+    top 0.36s cubic-bezier(0.2, 0.8, 0.2, 1),
+    right 0.36s cubic-bezier(0.2, 0.8, 0.2, 1),
+    width 0.36s cubic-bezier(0.2, 0.8, 0.2, 1),
+    padding 0.36s,
+    font-size 0.36s;
+}
+.search.expanded {
+  position: fixed;
+  top: 25vh;
+  right: calc(50vw - 300px);
+  width: 600px;
+  padding: 24px;
+  font-size: 27px;
+  background: #0e0e0e;
+  border: 1px solid #ff6e1f;
+  box-shadow: 0 20px 70px #000b;
+  flex-wrap: wrap;
+}
+.search.expanded input {
+  font-size: 27px;
+  width: calc(100% - 40px);
+  flex: 1;
+}
+.search-slot {
+  margin-left: auto;
+  width: 230px;
+  flex-shrink: 0;
+}
+.search-suggestions {
+  display: none;
+  width: 100%;
+}
+.search.expanded .search-suggestions {
+  display: block;
+}
+.search-suggestions p {
+  font-size: 14px;
+  color: #aaa;
+  margin: 20px 0 12px;
+}
+.search-suggestions button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 12px;
+  border: 0;
+  background: transparent;
+  font-size: 17px;
+}
+.search-suggestions button:hover {
+  background: #ff6e1f22;
+}
+body.searching #app::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  background: #000a;
+  z-index: 24;
+  pointer-events: auto;
+}
+@media (prefers-reduced-motion: reduce) {
+  .search {
+    transition: none;
+  }
+}

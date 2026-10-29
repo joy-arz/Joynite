@@ -1,3 +1,10 @@
+## Joynite 0.6.0
+
+- Space opens a smoothly expanding center search. Enter selects the best match and returns to the carousel without launching it; a subsequent Enter plays. Escape cancels. Tab no longer moves focus into search from the library.
+- Case- and accent-insensitive matching with typo-tolerant suggestions, including incryption and inkriotion → Inscryption. Exact matches rank first. Large-library search runs off the UI thread and stale results are discarded.
+- Portable ZIP backups include library metadata and available cached/custom artwork. Restore validates a versioned SHA-256 manifest, rejects unexpected paths and altered content, preserves existing game edits, and retains legacy JSON import.
+- Measure 1,000/10,000-game libraries, avoid rebuilding unchanged native search entries, and extend interrupted-check/failed-install UX tests. See IMPROVEMENTS.md for measured results and remaining device/signing limits.
+
 ## Joynite 0.5.0
 
 - Quiet background checks for official GitHub releases. A small top-right notice offers Update now, Update later, and Don’t remind me again for that version. Later snoozes 24 hours; newer releases bypass previous choices.

@@ -4,7 +4,7 @@ import JoyniteCore
 import UniformTypeIdentifiers
 
 @MainActor final class LibraryModel: ObservableObject {
-    @Published var library = LibraryFile() { didSet { rebuildVisible() } }
+    @Published var library = LibraryFile() { didSet { rebuildIndex(); rebuildVisible() } }
     @Published var selection: String?
     @Published var showLibrary = false
     @Published var showDetails = false
@@ -31,15 +31,53 @@ import UniformTypeIdentifiers
     @Published var carouselPosition = 0
     private var started = false
     private var processes: [String: Process] = [:]
-    private func rebuildVisible() {
-        visible = games.filter { game in
-            guard game.hidden != true else { return false }
-            let matches = filter == "All games" || (filter == "Favorites" && game.favorite) || (filter == "Recently played" && game.lastPlayed != nil) || filter == game.store.rawValue
-            return matches && (search.isEmpty || game.name.localizedCaseInsensitiveContains(search) || game.genres.contains { $0.localizedCaseInsensitiveContains(search) })
-        }.sorted { lhs, rhs in
-            if filter == "Recently played" { return (lhs.lastPlayed ?? .distantPast) > (rhs.lastPlayed ?? .distantPast) }
-            return lhs.name.localizedStandardCompare(rhs.name) == .orderedAscending
+    private var searchIndex: [String: GameSearch.Entry] = [:]
+    private var indexedNames: [String: String] = [:]
+    private var indexedGenres: [String: [String]] = [:]
+    private var searchTask: Task<Void, Never>?
+    private var searchRevision = 0
+    private func rebuildIndex() {
+        let ids = Set(games.map(\.id))
+        searchIndex = searchIndex.filter { ids.contains($0.key) }
+        for game in games where indexedNames[game.id] != game.name || indexedGenres[game.id] != game.genres {
+            searchIndex[game.id] = GameSearch.Entry(name: game.name, genres: game.genres)
         }
+        indexedNames = Dictionary(games.map { ($0.id, $0.name) }, uniquingKeysWith: { _, last in last })
+        indexedGenres = Dictionary(games.map { ($0.id, $0.genres) }, uniquingKeysWith: { _, last in last })
+    }
+    private func rebuildVisible() {
+        searchTask?.cancel(); searchRevision += 1
+        let revision = searchRevision
+        let query = Game.normalized(String(search.prefix(64))), index = searchIndex, scope = filter
+        let candidates = games.filter { game in
+            game.hidden != true && (scope == "All games" || (scope == "Favorites" && game.favorite) || (scope == "Recently played" && game.lastPlayed != nil) || scope == game.store.rawValue)
+        }
+        let work: @Sendable () -> [Game] = {
+            var scores: [String: Double] = [:]
+            return candidates.filter { game in
+                if Task.isCancelled { return false }
+                guard !query.isEmpty else { return true }
+                guard let score = index[game.id]?.score(normalized: query) else { return false }
+                scores[game.id] = score; return true
+            }.sorted { lhs, rhs in
+                if !query.isEmpty, scores[lhs.id] != scores[rhs.id] { return (scores[lhs.id] ?? 10) < (scores[rhs.id] ?? 10) }
+                if scope == "Recently played" { return (lhs.lastPlayed ?? .distantPast) > (rhs.lastPlayed ?? .distantPast) }
+                return lhs.name.localizedStandardCompare(rhs.name) == .orderedAscending
+            }
+        }
+        if candidates.count <= 500 { visible = work(); return }
+        searchTask = Task {
+            let job = Task.detached(priority: .userInitiated, operation: work)
+            let result = await withTaskCancellationHandler { await job.value } onCancel: { job.cancel() }
+            guard !Task.isCancelled, self.searchRevision == revision else { return }
+            visible = result; ensureSelection()
+        }
+    }
+    func finishSearch(select id: String? = nil) async -> Bool {
+        let text = search; await searchTask?.value
+        guard text == search, let found = id ?? visible.first?.id else { return false }
+        search = ""; selection = found; carouselPosition = 0
+        status = "Selected \(selected?.name ?? "game")."; return true
     }
     init() {
         let environment = ProcessInfo.processInfo.environment
@@ -52,7 +90,7 @@ import UniformTypeIdentifiers
             if override == nil { try LibraryMigration.prepare(destination: directory, legacyDirectories: [support.appendingPathComponent("PlayniteMac")]) }
             library = try storage.load()
         } catch { writable = false; self.error = "Library could not be read or migrated. Existing files have been preserved. \(error.localizedDescription)" }
-        rebuildVisible(); selection = visible.first?.id
+        rebuildIndex(); rebuildVisible(); selection = visible.first?.id
     }
     func startup() async {
         guard !started else { return }; started = true
@@ -304,19 +342,29 @@ import UniformTypeIdentifiers
         for game in games where UninstallPlan.confirmedMissing(game) { await finishUninstall(game) }
     }
     func exportLibrary() {
-        let panel = NSSavePanel(); panel.nameFieldStringValue = "Joynite-library.json"; panel.allowedContentTypes = [.json]
+        let panel = NSSavePanel(); panel.nameFieldStringValue = "Joynite-backup.zip"; panel.allowedContentTypes = [.zip]
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        do { let encoder = JSONEncoder(); encoder.outputFormatting = [.prettyPrinted, .sortedKeys]; try encoder.encode(library).write(to: url, options: .atomic); status = "Library exported." }
-        catch { self.error = error.localizedDescription }
+        let snapshot = library; let root = media.root
+        Task {
+            busy = true; defer { busy = false }
+            do { try await Task.detached { try LibraryBackup.export(snapshot, media: root, to: url) }.value; status = "Library and artwork backed up." }
+            catch { self.error = error.localizedDescription }
+        }
     }
     func importLibrary() {
         guard writable else { error = "Library is read-only. Restore its backup before making changes."; return }
-        let panel = NSOpenPanel(); panel.allowedContentTypes = [.json]
+        let panel = NSOpenPanel(); panel.allowedContentTypes = [.zip, .json]
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
-            let imported = try LibraryStorage(url: url).load()
-            for game in imported.games where !games.contains(where: { $0.id == game.id }) { library.games.append(game) }
-            save(); selection = visible.first?.id; status = "Library merged."
+            if url.pathExtension.lowercased() == "zip" {
+                library = try LibraryBackup.restore(url, current: library, storage: storage, media: media.root)
+            } else {
+                let imported = try LibraryStorage(url: url).load()
+                var next = library; var ids = Set(games.map(\.id))
+                for game in imported.games where ids.insert(game.id).inserted { next.games.append(game) }
+                try storage.save(next); library = next
+            }
+            cacheRevision += 1; selection = visible.first?.id; status = "Library restored. Existing games kept."
             Task { await prepareOfflineLibrary() }
         } catch { self.error = "Import failed: \(error.localizedDescription)" }
     }

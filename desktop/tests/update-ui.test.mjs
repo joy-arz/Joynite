@@ -20,6 +20,8 @@ test("quiet background update UX, later, skip, next release, offline and install
   let online = true,
     enabled = true,
     available = true,
+    failCheck = false,
+    failInstall = false,
     version = "0.6.0",
     checkCount = 0,
     installCount = 0,
@@ -32,12 +34,14 @@ test("quiet background update UX, later, skip, next release, offline and install
     if (command === "update_checks_enabled") return enabled;
     if (command === "plugin:updater|check") {
       checkCount++;
+      if (failCheck) throw new Error("Connection interrupted");
       return available
         ? { rid: 100, currentVersion: "0.5.0", version, rawJson: {} }
         : null;
     }
     if (command === "plugin:updater|download_and_install") {
       installCount++;
+      if (failInstall) throw new Error("Disk full or installation denied");
       return null;
     }
     if (command === "plugin:process|restart") {
@@ -101,6 +105,27 @@ test("quiet background update UX, later, skip, next release, offline and install
   await controller.checkNow();
   assert.equal(checkCount, before);
   assert(notice().hidden);
+  enabled = true;
+  failCheck = true;
+  controller = create();
+  await controller.checkNow();
+  assert(notice().hidden);
+  assert(
+    document
+      .querySelector("#update-check-status")
+      .textContent.includes("Could not reach"),
+  );
+  failCheck = false;
+  failInstall = true;
+  controller = create();
+  await controller.checkNow();
+  notice().querySelector(".update-now").click();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert(
+    notice().querySelector(".update-message").textContent.includes("Disk full"),
+  );
+  assert(!notice().querySelector(".update-now").disabled);
+  assert.equal(restarts, 1);
   window.dispatchEvent(new dom.window.Event("beforeunload"));
   clearMocks();
   dom.window.close();

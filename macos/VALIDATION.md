@@ -1,5 +1,9 @@
 # Joynite validation record
 
+## Version 0.6.0 — 2026-10-29
+
+Search and backup validation: 181 native assertions with live metadata providers (171 without the live-provider checks), plus shared backup/search/update failure tests. The native UI confirmed Tab cannot trap navigation, Space expands/focuses search, inkriotion and INSCRYPTION find Inscryption, Enter collapses search without launching, and arrows resume afterward. Mindustry's main menu was observed after a launch from Joynite. Sikarugir process startup was observed separately; its game window was not exposed to UI automation. See ../docs/VALIDATION-MATRIX.md and ../IMPROVEMENTS.md for exact boundaries and performance measurements.
+
 ## Version 0.5.0 — 2026-10-29
 
 167 live / 157 offline core assertions; 15 shared Rust tests; 9 frontend tests including real notification DOM with mocked platform IPC; 3 release-feed tests. Native ZIP signing includes actual archive signature verification. The updater UI is checked with a validation-only preview and a copied offline library, without publishing fake releases. Update later stayed dismissed after reopening; a manual check could show it again. Skipping 0.6.0 stayed dismissed after reopening, and a simulated 0.7.0 notification appeared without clearing the old preference.

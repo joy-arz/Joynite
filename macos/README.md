@@ -45,13 +45,13 @@ A publisher catalog contains offline descriptions, developers, and genres for Ro
 
 Open game details and choose **Edit metadata and images…**, use the card context menu, or press Command-E. Edit title, developer, release date, comma-separated genres, and description. Choose separate card, inspection, and background images. PNG, JPEG, WebP, and GIF files up to 24 MB are copied into the managed cache; the source files can then be moved without breaking the library. Only the first frame of animated images is used. Oversized dimensions are rejected before decoding.
 
-Overrides are per field and survive automatic refresh. Untouched fields still receive new provider data. **Reset custom text** restores the latest cached automatic values; each **Use automatic** button resets one image role independently. Everything works offline once saved. JSON export includes the text/override records, but not image files: copy the Media directory too when moving custom artwork to another computer.
+Overrides are per field and survive automatic refresh. Untouched fields still receive new provider data. **Reset custom text** restores the latest cached automatic values; each **Use automatic** button resets one image role independently. Everything works offline once saved. ZIP backups include the library plus available cached and custom images. Restore verifies the manifest and file hashes before merging; existing game records and edits are kept. Legacy JSON imports remain available.
 
 ## Offline retention
 
 Metadata lives in `~/Library/Application Support/Joynite/library.json`. Covers and alternate backgrounds are downloaded, validated, resized to a maximum dimension of 1200 pixels for portrait/inspection images and 1600 pixels for backgrounds/custom images, and saved as PNGs under `Media/<game-id-hash>/`. The library stores their cache keys. Rendering reads local files, so already cached artwork and metadata remain usable offline and across restarts. Remote failures preserve the last successful files. Existing 0.1 records migrate without losing favorites, launch history, or descriptions.
 
-**Hide from library** keeps the record and cache. Missing external disks do not trigger cleanup. An explicit refresh can update metadata; it does not erase valid fields when a response omits them. Text exported as JSON remains portable; the image cache stays on its originating Mac and can be repopulated online on a new Mac.
+**Hide from library** keeps the record and cache. Missing external disks do not trigger cleanup. An explicit refresh can update metadata; it does not erase valid fields when a response omits them. Use **Library → Back up library and images…** for a portable ZIP. **Restore library backup…** restores available artwork offline; launch paths can still require re-adding on a different computer.
 
 Library saves are atomic and retain the previous version as `library.json.backup`. A corrupt library is preserved and not overwritten. Restore a backup and restart if necessary. Export a library before moving machines; launch paths may need re-adding. No credentials or telemetry server are used.
 
@@ -102,3 +102,7 @@ Joynite migrates earlier libraries without deleting their originals. Legacy data
 ## Quiet software updates
 
 A background check runs after startup without blocking your library. A new official release appears in a small top-right notice. Update now downloads and verifies the signed package before installation. Update later snoozes that version for 24 hours. Don’t remind me again skips only that version; newer releases can notify again. Offline failures stay silent. Settings includes a manual check. Libraries, cached artwork, and game installations are not replaced by app updates. Version 0.4 needs one manual install of 0.5 to gain this feature. See ../updates/README.md and ../IMPROVEMENTS.md.
+
+## Search
+
+Press **Space** (or Command-F) to expand search into the center. Matching ignores case and accents and offers the closest titles for misspellings. Enter selects the best result and returns the field to the header; it does not launch the game. Press Enter again to play. Escape cancels. Tab and Shift-Tab do not move focus in the library, while settings/editor forms retain standard navigation. Large-library search runs off the main thread, with stale results discarded.

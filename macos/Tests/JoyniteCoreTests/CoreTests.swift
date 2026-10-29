@@ -1,8 +1,54 @@
 import Foundation
 import AppKit
 import JoyniteCore
+import ZIPFoundation
 
 final class CoreTests {
+    func testFuzzySearchAndPortableBackup() throws {
+        let entry = GameSearch.Entry(name: "Inscryption")
+        XCTAssertEqual(entry.score("INSCRYPTION"), 0)
+        XCTAssertTrue(entry.score("incryption") != nil)
+        XCTAssertTrue(entry.score("inkriotion") != nil)
+        XCTAssertNil(entry.score("zzzzzzzzzz"))
+        XCTAssertEqual(GameSearch.Entry(name: "Pokémon").score("pokemon"), 0)
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let media = root.appendingPathComponent("source/Media")
+        var game = Game(id: "backup-test", name: "Inscryption", store: .local, launchKind: .application, launchTarget: "/missing/Game.app")
+        game.customArtwork = String(repeating: "a", count: 64) + ".png"
+        game.metadataOverrides = ["summary": "Offline custom description"]
+        let file = media.appendingPathComponent(MediaCache.identifier(game.id)).appendingPathComponent(game.customArtwork!)
+        try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let image = Data("portable artwork fixture".utf8); try image.write(to: file)
+        let source = LibraryFile(games: [game]); let zip = root.appendingPathComponent("backup.zip")
+        try LibraryBackup.export(source, media: media, to: zip)
+        let destination = root.appendingPathComponent("restored")
+        let storage = LibraryStorage(url: destination.appendingPathComponent("library.json"))
+        let restored = try LibraryBackup.restore(zip, current: LibraryFile(), storage: storage, media: destination.appendingPathComponent("Media"))
+        XCTAssertEqual(restored.games, source.games)
+        try XCTAssertEqual(try Data(contentsOf: destination.appendingPathComponent("Media/\(MediaCache.identifier(game.id))/\(game.customArtwork!)")), image)
+        var existing = game; existing.name = "Kept edit"
+        let merged = try LibraryBackup.restore(zip, current: LibraryFile(games: [existing]), storage: storage, media: destination.appendingPathComponent("Media"))
+        XCTAssertEqual(merged.games.first?.name, "Kept edit")
+        try Data("interrupted download".utf8).write(to: zip)
+        XCTAssertThrowsError(try LibraryBackup.restore(zip, current: merged, storage: storage, media: destination.appendingPathComponent("Media")))
+        try XCTAssertEqual(try storage.load().games.first?.name, "Kept edit")
+    }
+    func testBackupRejectsPathsAndChangedContent() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        for (index, path) in ["../escape", "library.json"].enumerated() {
+            let file = root.appendingPathComponent("bad-\(index).zip")
+            let archive = try Archive(url: file, accessMode: .create)
+            let content = Data("{}".utf8)
+            try archive.addEntry(with: path, type: .file, uncompressedSize: Int64(content.count)) { position, size in content.subdata(in: Int(position)..<Int(position) + size) }
+            let manifest = Data(#"{"format":1,"files":{"library.json":"incorrect"}}"#.utf8)
+            try archive.addEntry(with: "manifest.json", type: .file, uncompressedSize: Int64(manifest.count)) { position, size in manifest.subdata(in: Int(position)..<Int(position) + size) }
+            XCTAssertThrowsError(try LibraryBackup.restore(file, current: LibraryFile(), storage: LibraryStorage(url: root.appendingPathComponent("restored/library.json")), media: root.appendingPathComponent("restored/Media")))
+            XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("restored/library.json").path))
+        }
+    }
     func testVDFNestedPathsAndEscapes() throws {
         let input = #"""
         // installed libraries
@@ -316,8 +362,21 @@ private func XCTAssertThrowsError<T>(_ value: @autoclosure () throws -> T, line:
 
 @main enum Validation {
     @MainActor static func main() async {
+        if CommandLine.arguments.contains("--benchmark") {
+            for count in [1000, 10000] {
+                let games = (0..<count).map { Game(id: "bench-\($0)", name: "Game \($0) Adventure", store: .local, launchKind: .application, launchTarget: "/missing") }
+                let start = Date(); let entries = games.map { GameSearch.Entry(name: $0.name) }; let indexed = Date()
+                let matches = entries.compactMap { $0.score("inkriotion") }; let searched = Date()
+                let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+                do { try LibraryStorage(url: root.appendingPathComponent("library.json")).save(LibraryFile(games: games)); print("BENCH native count=\(count) index_ms=\(indexed.timeIntervalSince(start)*1000) fuzzy_ms=\(searched.timeIntervalSince(indexed)*1000) save_ms=\(Date().timeIntervalSince(searched)*1000) matches=\(matches.count)"); try? FileManager.default.removeItem(at: root) }
+                catch { print("BENCH failed: \(error)"); exit(1) }
+            }
+            return
+        }
         let suite = CoreTests()
         let tests: [(String, () throws -> Void)] = [
+            ("Backup traversal and altered-content rejection", suite.testBackupRejectsPathsAndChangedContent),
+            ("Fuzzy search and portable offline backup", suite.testFuzzySearchAndPortableBackup),
             ("VDF nested objects, escaped paths, malformed input", suite.testVDFNestedPathsAndEscapes),
             ("Steam installed-state bitmask and directory checks", suite.testSteamDiscoveryChecksInstalledBitAndDirectory),
             ("Atomic persistence, backup, corrupt library handling", suite.testPersistenceRoundTripAndBackup),

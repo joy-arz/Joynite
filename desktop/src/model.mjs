@@ -1,3 +1,4 @@
+import { normalizeSearch, searchIndex, searchScore } from "./search.mjs";
 export const wrap = (index, count) =>
   count > 0 ? ((index % count) + count) % count : null;
 export const offsets = (count) =>
@@ -18,7 +19,9 @@ export function nearestPosition(position, index, count) {
   return position + delta;
 }
 export function filterGames(games, filter, query) {
-  const term = query.toLocaleLowerCase();
+  const term = normalizeSearch(query.slice(0, 64));
+  const index = searchIndex(games),
+    scores = new Map();
   return games
     .filter(
       (g) =>
@@ -28,13 +31,19 @@ export function filterGames(games, filter, query) {
           (filter === "Recently played" && g.lastPlayed) ||
           g.store === filter) &&
         (!term ||
-          g.name.toLocaleLowerCase().includes(term) ||
-          (g.genres || []).some((s) => s.toLocaleLowerCase().includes(term))),
+          (() => {
+            const score = searchScore(index.get(g.id), term);
+            if (score === null) return false;
+            scores.set(g.id, score);
+            return true;
+          })()),
     )
     .sort((a, b) =>
-      filter === "Recently played"
-        ? (b.lastPlayed || 0) - (a.lastPlayed || 0)
-        : a.name.localeCompare(b.name),
+      term && scores.get(a.id) !== scores.get(b.id)
+        ? scores.get(a.id) - scores.get(b.id)
+        : filter === "Recently played"
+          ? (b.lastPlayed || 0) - (a.lastPlayed || 0)
+          : a.name.localeCompare(b.name),
     );
 }
 export const imageRole = (game, role) =>

@@ -22,12 +22,12 @@ import {
 const $ = (s) => document.querySelector(s);
 $("#app").innerHTML = `
 <div class="backdrop" aria-hidden="true"><img id="fill0" class="image-fill"><img id="bg0"><img id="fill1" class="image-fill"><img id="bg1"><div class="shade"></div></div>
-<header><button id="libraries" class="icon" title="Libraries (L)" aria-label="Toggle libraries">☰</button><strong class="brand"><img src="${logo}" alt=""> Joynite</strong><span id="filter-label">All games</span><div class="search"><span>⌕</span><input id="search" type="search" placeholder="Find a game" aria-label="Find a game"></div><button id="manage">＋ Add / manage</button><button id="details-toggle" class="icon" title="Details (Shift)" aria-label="Toggle game details">ⓘ</button></header>
+<header><button id="libraries" class="icon" title="Libraries (L)" aria-label="Toggle libraries">☰</button><strong class="brand"><img src="${logo}" alt=""> Joynite</strong><span id="filter-label">All games</span><div class="search-slot"></div><div class="search"><span>⌕</span><input id="search" type="search" tabindex="-1" placeholder="Find a game · Space" aria-label="Find a game"></div><button id="manage">＋ Add / manage</button><button id="details-toggle" class="icon" title="Details (Shift)" aria-label="Toggle game details">ⓘ</button></header>
 <main><section id="stage" aria-label="Game carousel"><div id="cards"></div><button id="prev" class="nav" aria-label="Previous game">‹</button><button id="next" class="nav" aria-label="Next game">›</button><div id="empty" hidden><h1>Your next game starts here.</h1><p>Add a game or scan your installed libraries.</p><button id="empty-add">Add game</button></div></section><div class="caption"><span id="position"></span><span class="orange-line"></span><span id="genres"></span><span id="offline"></span></div></main>
 <footer><div class="hints" id="hints"></div><span id="input-kind">⌨ Keyboard</span><div class="status-row"><span id="status" role="status">Loading your library…</span><button id="notices" hidden></button><button id="cancel" hidden>Stop metadata fetch</button><button id="settings-open" title="Settings (Command/Ctrl+,)" aria-label="Joynite settings">⚙ Settings</button><button id="support" title="Support joy-arz on Ko-fi" aria-label="Support Joynite on Ko-fi"><img src="${kofi}" alt="">Support Joynite</button></div></footer>
 <aside id="library-panel" hidden><div class="panel-heading"><h2>Libraries</h2><button id="library-close" aria-label="Close libraries">×</button></div><nav id="filters"></nav><div class="panel-bottom"><button id="restore">Restore hidden games</button><button id="help">Help and notices</button></div></aside>
 <aside id="details" hidden><div class="panel-heading"><h2>Game details</h2><button id="details-close" aria-label="Close details">×</button></div><div id="detail-content"></div></aside>
-<dialog id="actions"><div class="dialog-heading"><h2>Your library</h2><button data-close aria-label="Close">×</button></div><div class="action-grid"><button id="add-game">Add game application</button><button id="add-folder">Add games / Wine-prefix folder</button><button id="scan">Scan installed games</button><button id="refresh">Refresh metadata</button><button id="edit-custom">Edit selected metadata / images</button><button id="publishers">Publisher metadata catalog</button><button id="import">Import library JSON</button><button id="export">Export library JSON</button><button id="action-settings">Settings</button><button id="action-help">Help and notices</button></div></dialog>
+<dialog id="actions"><div class="dialog-heading"><h2>Your library</h2><button data-close aria-label="Close">×</button></div><div class="action-grid"><button id="add-game">Add game application</button><button id="add-folder">Add games / Wine-prefix folder</button><button id="scan">Scan installed games</button><button id="refresh">Refresh metadata</button><button id="edit-custom">Edit selected metadata / images</button><button id="publishers">Publisher metadata catalog</button><button id="import">Restore library backup</button><button id="export">Back up library and images</button><button id="action-settings">Settings</button><button id="action-help">Help and notices</button></div></dialog>
 <dialog id="metadata"><div class="dialog-heading"><h2>Find metadata</h2><button data-close aria-label="Close">×</button></div><p id="match-for"></p><form id="search-form"><input id="metadata-query" placeholder="Game title" aria-label="Game title"><button>Search Steam</button></form><div id="matches"></div><form id="page-form"><input id="metadata-page" placeholder="HTTPS Steam, GOG, itch.io or publisher page" aria-label="Store page"><button>Fetch page</button></form></dialog>
 <dialog id="publisher-list"><div class="dialog-heading"><h2>Beyond the stores</h2><button data-close aria-label="Close">×</button></div><p>Bundled metadata does not change a game's platform compatibility.</p><div id="publisher-items"></div></dialog>
 <dialog id="help-dialog"><div class="dialog-heading"><h2>Library help</h2><button data-close aria-label="Close">×</button></div><div id="help-content"></div></dialog>
@@ -43,6 +43,29 @@ let data = { games: [], folders: [], notices: [], platform: "" },
   frame = 0,
   previousPosition = 0;
 const cards = new Map();
+let searchExpanded = false;
+let workerHasData = false,
+  workerFailed = false;
+let searchRevision = 0,
+  searchResolve = null,
+  searchWork = Promise.resolve();
+const searchWorker = new Worker(
+  new URL("./search-worker.mjs", import.meta.url),
+  { type: "module" },
+);
+searchWorker.onmessage = ({ data: result }) => {
+  if (result.revision !== searchRevision) return;
+  const byID = new Map(data.games.map((g) => [g.id, g]));
+  visible = result.ids.map((id) => byID.get(id)).filter(Boolean);
+  position = 0;
+  previousPosition = 0;
+  cards.forEach((c) => c.remove());
+  cards.clear();
+  schedule();
+  renderSearchSuggestions();
+  searchResolve?.();
+  searchResolve = null;
+};
 let busy = false,
   scanPending = null,
   hydratePending = null,
@@ -59,6 +82,15 @@ let busy = false,
   input = "keyboard",
   padName = "",
   unlisten = null;
+searchWorker.onerror = () => {
+  workerFailed = true;
+  visible = filterGames(data.games, filter, query);
+  position = 0;
+  schedule();
+  renderSearchSuggestions();
+  searchResolve?.();
+  searchResolve = null;
+};
 const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
 const selected = () => visible[wrap(position, visible.length)] ?? null;
 const status = (text) => {
@@ -74,6 +106,10 @@ function report(error) {
   message(String(error), { title: "Joynite", kind: "error" }).catch(() => {});
 }
 function snapshot(next) {
+  workerHasData = false;
+  searchRevision++;
+  searchResolve?.();
+  searchResolve = null;
   if ((next.revision || 0) < (data.revision || 0)) return;
   const id = selected()?.id;
   const oldIDs = visible.map((g) => g.id).join("\n");
@@ -94,6 +130,9 @@ function snapshot(next) {
   if (data.error) status(data.error);
 }
 function changeFilter() {
+  searchRevision++;
+  searchResolve?.();
+  searchResolve = null;
   visible = filterGames(data.games, filter, query);
   position = 0;
   previousPosition = 0;
@@ -580,7 +619,7 @@ function showHelp() {
     "Three local artwork roles: fitted portrait cover, landscape inspection image, alternate backdrop. Missing roles use the last cached fallback; no remote image request is made by the renderer.",
     "Native Mac apps and Linux AppImages can move to Trash. Steam and Wine Steam open the correct client uninstall dialog. Other package installations use their original client/system manager. Data in a moved application bundle moves with it; external saves stay in place.",
     "Wine/CrossOver/Sikarugir entries preserve their prefix identity and reuse the installed runtime. No Wine, Steam, or wrapper settings are rewritten. No new game compatibility or anti-cheat support is supplied.",
-    "The shared desktop edition copies a native Mac library on first run into its own JoyniteDesktop data directory. JSON export includes metadata; cached images remain on this computer.",
+    "The shared desktop edition copies a native Mac library on first run into its own JoyniteDesktop data directory. ZIP backups include metadata and available cached/custom images, verified before restore. Legacy JSON imports remain available.",
     "Notices",
     ...data.notices,
     ...data.folders.map((s) => `Additional folder: ${s}`),
@@ -614,6 +653,7 @@ function renderHints() {
             ["Shift", "Details"],
             ["L", "Libraries"],
             ["F", "Favorite"],
+            ["Space", "Search"],
           ];
   const hints = $("#hints");
   const signature = JSON.stringify(labels);
@@ -631,6 +671,61 @@ function renderHints() {
   $("#input-kind").textContent =
     input === "controller" ? `◉ ${padName || "Controller"}` : "⌨ Keyboard";
 }
+const searchBox = $(".search");
+const suggestions = document.createElement("div");
+suggestions.className = "search-suggestions";
+searchBox.append(suggestions);
+function openSearch() {
+  if (searchExpanded) return;
+  searchExpanded = true;
+  searchBox.classList.add("expanded");
+  document.body.classList.add("searching");
+  $("#search").focus();
+  renderSearchSuggestions();
+}
+function closeSearch(id = null) {
+  if (id) {
+    query = "";
+    $("#search").value = "";
+    changeFilter();
+    const index = visible.findIndex((g) => g.id === id);
+    if (index >= 0) {
+      position = index;
+      schedule();
+    }
+  } else {
+    query = "";
+    $("#search").value = "";
+    changeFilter();
+  }
+  searchExpanded = false;
+  searchBox.classList.remove("expanded");
+  document.body.classList.remove("searching");
+  $("#search").blur();
+}
+function renderSearchSuggestions() {
+  suggestions.replaceChildren();
+  const caption = document.createElement("p");
+  caption.textContent = query
+    ? "Closest matches"
+    : "Enter selects. Escape cancels.";
+  suggestions.append(caption);
+  for (const game of visible.slice(0, 5)) {
+    const button = document.createElement("button");
+    button.textContent = game.name;
+    button.onclick = () => closeSearch(game.id);
+    suggestions.append(button);
+  }
+  if (!visible.length) {
+    const p = document.createElement("p");
+    p.textContent = "No close matches. Try another title.";
+    suggestions.append(p);
+  }
+}
+$("#search").addEventListener("focus", openSearch);
+$("#app").addEventListener("pointerdown", (event) => {
+  if (searchExpanded && event.target === $("#app")) closeSearch();
+});
 window.addEventListener("keydown", (event) => {
   useKeyboard();
   if (modalOpen()) return;
@@ -641,7 +736,7 @@ window.addEventListener("keydown", (event) => {
   }
   if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "f") {
     event.preventDefault();
-    $("#search").focus();
+    openSearch();
     return;
   }
   if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "r") {
@@ -650,17 +745,40 @@ window.addEventListener("keydown", (event) => {
     return;
   }
   if (
+    event.key === " " &&
+    !typing(event.target) &&
+    !event.altKey &&
+    !event.metaKey &&
+    !event.ctrlKey
+  ) {
+    event.preventDefault();
+    if (!event.repeat) openSearch();
+    return;
+  }
+  if (
     event.target instanceof HTMLElement &&
     event.target.matches("button:not(.card),a") &&
     ["Enter", " "].includes(event.key)
   )
     return;
+  if (event.key === "Tab") {
+    event.preventDefault();
+    return;
+  }
+  if (searchExpanded && event.key === "Enter") {
+    event.preventDefault();
+    if (!event.repeat) {
+      const revision = searchRevision;
+      searchWork.then(() => {
+        if (searchExpanded && revision === searchRevision && visible.length)
+          closeSearch(visible[0].id);
+      });
+    }
+    return;
+  }
   if (typing(event.target)) {
     if (event.key === "Escape") {
-      $("#search").value = "";
-      query = "";
-      $("#search").blur();
-      changeFilter();
+      closeSearch();
     }
     return;
   }
@@ -699,7 +817,7 @@ let lastWheel = 0;
 $("#stage").addEventListener(
   "wheel",
   (event) => {
-    if (modalOpen()) return;
+    if (modalOpen() || searchExpanded) return;
     const delta =
       Math.abs(event.deltaX) > Math.abs(event.deltaY)
         ? event.deltaX
@@ -812,7 +930,36 @@ document.addEventListener("visibilitychange", () =>
 $("#edit-custom").onclick = showCustomEditor;
 $("#search").addEventListener("input", (event) => {
   query = event.target.value;
-  changeFilter();
+  if (data.games.length <= 500 || workerFailed) {
+    changeFilter();
+    renderSearchSuggestions();
+    return;
+  }
+  searchRevision++;
+  searchResolve?.();
+  searchWork = new Promise((resolve) => {
+    searchResolve = resolve;
+  });
+  suggestions.replaceChildren();
+  const caption = document.createElement("p");
+  caption.textContent = "Finding matches…";
+  suggestions.append(caption);
+  const request = { filter, query, revision: searchRevision };
+  if (!workerHasData) {
+    request.games = data.games.map(
+      ({ id, name, genres, hidden, store, favorite, lastPlayed }) => ({
+        id,
+        name,
+        genres,
+        hidden,
+        store,
+        favorite,
+        lastPlayed,
+      }),
+    );
+    workerHasData = true;
+  }
+  searchWorker.postMessage(request);
 });
 $("#libraries").onclick = toggleLibraries;
 $("#library-close").onclick = () => {
@@ -858,12 +1005,12 @@ $("#export").onclick = async () => {
   try {
     const path = await save({
       title: "Export library",
-      defaultPath: "Joynite-library.json",
-      filters: [{ name: "Library JSON", extensions: ["json"] }],
+      defaultPath: "Joynite-backup.zip",
+      filters: [{ name: "Library backup", extensions: ["zip"] }],
     });
     if (path) {
       await invoke("export_library", { path });
-      status("Library exported.");
+      status("Library and artwork backed up.");
     }
     closeDialogs();
   } catch (e) {
@@ -874,7 +1021,9 @@ $("#import").onclick = async () => {
   try {
     const path = await open({
       title: "Import library",
-      filters: [{ name: "Library JSON", extensions: ["json"] }],
+      filters: [
+        { name: "Library backup / legacy JSON", extensions: ["zip", "json"] },
+      ],
       multiple: false,
     });
     if (path) {

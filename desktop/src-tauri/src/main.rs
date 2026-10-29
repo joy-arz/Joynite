@@ -1,4 +1,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+mod backup;
 mod discovery;
 mod library;
 mod metadata;
@@ -224,34 +225,58 @@ fn open_page(url: String) -> Result<(), String> {
 }
 #[tauri::command]
 async fn export_library(state: State<'_>, path: String) -> Result<(), String> {
-    let path = PathBuf::from(path);
-    if path.extension().is_none_or(|e| e != "json") {
-        return Err("Choose a JSON file".into());
-    }
-    let store = state.store.lock().map_err(|e| e.to_string())?;
-    let bytes = serde_json::to_vec_pretty(&store.library).map_err(|e| e.to_string())?;
-    std::fs::write(path, bytes).map_err(|e| e.to_string())
+    let state = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let path = PathBuf::from(path);
+        let store = state.store.lock().map_err(|e| e.to_string())?;
+        if path.extension().is_none_or(|e| e != "zip") {
+            return Err("Choose a ZIP backup".into());
+        }
+        let library = store.library.clone();
+        let root = store.root.clone();
+        drop(store);
+        backup::export(&library, &root, &path)
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 #[tauri::command]
 async fn import_library(state: State<'_>, path: String) -> Result<Snapshot, String> {
-    let bytes = std::fs::read(path).map_err(|e| e.to_string())?;
-    if bytes.len() > 25_000_000 {
-        return Err("Library exceeds 25 MB".into());
-    }
-    let incoming: model::Library = serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
-    if incoming.version != 1 {
-        return Err("Unsupported library version".into());
-    }
-    let mut store = state.store.lock().map_err(|e| e.to_string())?;
-    store.ensure_writable()?;
-    for mut game in incoming.games {
-        game.extra.remove("images");
-        if !store.library.games.iter().any(|g| g.id == game.id) {
-            store.library.games.push(game)
-        }
-    }
-    store.save()?;
-    Ok(store.snapshot())
+    let state = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let path = PathBuf::from(path);
+        let mut store = state.store.lock().map_err(|e| e.to_string())?;
+        store.ensure_writable()?;
+        let next = if path.extension().is_some_and(|e| e == "zip") {
+            backup::restore(&path, &store.library, &store.root)?
+        } else {
+            let bytes = std::fs::read(path).map_err(|e| e.to_string())?;
+            if bytes.len() > 25_000_000 {
+                return Err("Library exceeds 25 MB".into());
+            }
+            let incoming: model::Library =
+                serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
+            if incoming.version != 1 {
+                return Err("Unsupported library version".into());
+            }
+            let mut next = store.library.clone();
+            let mut ids: std::collections::BTreeSet<String> =
+                next.games.iter().map(|g| g.id.clone()).collect();
+            for mut game in incoming.games {
+                if ids.insert(game.id.clone()) {
+                    game.extra.remove("images");
+                    next.games.push(game)
+                }
+            }
+            library::save_library(&store.root, &next)?;
+            next
+        };
+        store.library = next;
+        store.revision += 1;
+        Ok(store.snapshot())
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 #[tauri::command]
 async fn save_custom_metadata(
