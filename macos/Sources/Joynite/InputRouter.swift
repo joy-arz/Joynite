@@ -44,7 +44,7 @@ import SwiftUI
     }
     private var textEntry: Bool { NSApp.keyWindow?.firstResponder is NSTextView }
     private var canAct: Bool {
-        NSApp.isActive && NSApp.keyWindow?.title == "Playnite for Mac" && NSApp.keyWindow?.attachedSheet == nil && (acceptsInput?() ?? true)
+        NSApp.isActive && NSApp.keyWindow?.title == "Joynite" && NSApp.keyWindow?.attachedSheet == nil && (acceptsInput?() ?? true)
     }
     private func keyboard(_ event: NSEvent) -> NSEvent? {
         if event.type == .leftMouseDown || event.type == .mouseMoved { usingController = false; return event }

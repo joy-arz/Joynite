@@ -40,9 +40,9 @@ public enum UninstallPlan: Equatable {
               !game.installPath.isEmpty, URL(fileURLWithPath: game.installPath).standardizedFileURL == target,
               !target.path.hasPrefix("/System/"), !target.path.hasPrefix("/Library/"),
               !target.path.contains(".app/"), !target.path.contains("/.Trash/"),
-              Bundle(url: target)?.bundleIdentifier != "io.github.joy-arz.PlayniteMac",
+              !JoyniteIdentity.isLauncher(Bundle(url: target)?.bundleIdentifier ?? ""),
               FileManager.default.fileExists(atPath: target.appendingPathComponent("Contents/Info.plist").path) else {
-            throw LibraryError.invalid("Only this game's existing, top-level Mac application can be moved to Trash. System apps, links, and Playnite itself are protected.")
+            throw LibraryError.invalid("Only this game's existing, top-level Mac application can be moved to Trash. System apps, links, and Joynite itself are protected.")
         }
         return .trashApplication(target)
     }

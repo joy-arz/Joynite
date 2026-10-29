@@ -43,7 +43,7 @@ public actor MediaCache {
         if let existing = file(gameID: gameID, key: key), let source = CGImageSourceCreateWithURL(existing as CFURL, nil),
            let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
            let width = properties[kCGImagePropertyPixelWidth] as? Int, let height = properties[kCGImagePropertyPixelHeight] as? Int, role.fits(width: width, height: height) { return key }
-        guard ProcessInfo.processInfo.environment["PLAYNITE_OFFLINE"] != "1" else { throw LibraryError.invalid("Offline mode: cached artwork remains available.") }
+        guard (ProcessInfo.processInfo.environment["JOYNITE_OFFLINE"] ?? ProcessInfo.processInfo.environment["PLAYNITE_OFFLINE"]) != "1" else { throw LibraryError.invalid("Offline mode: cached artwork remains available.") }
         var request = URLRequest(url: url); request.timeoutInterval = 18
         let (temporary, response) = try await session.download(for: request)
         defer { try? FileManager.default.removeItem(at: temporary) }

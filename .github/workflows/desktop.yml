@@ -60,15 +60,15 @@ jobs:
       - name: Archive macOS app
         if: runner.os == 'macOS'
         run: |
-          codesign --force --deep --sign - 'desktop/src-tauri/target/release/bundle/macos/Playnite Carousel.app'
-          codesign --verify --deep --strict 'desktop/src-tauri/target/release/bundle/macos/Playnite Carousel.app'
-          ditto -c -k --sequesterRsrc --keepParent 'desktop/src-tauri/target/release/bundle/macos/Playnite Carousel.app' 'desktop/PlayniteCarousel-macOS.zip'
+          codesign --force --deep --sign - 'desktop/src-tauri/target/release/bundle/macos/Joynite.app'
+          codesign --verify --deep --strict 'desktop/src-tauri/target/release/bundle/macos/Joynite.app'
+          ditto -c -k --sequesterRsrc --keepParent 'desktop/src-tauri/target/release/bundle/macos/Joynite.app' 'desktop/JoyniteDesktop-macOS.zip'
       - uses: actions/upload-artifact@v4
         with:
-          name: PlayniteCarousel-${{ matrix.name }}
+          name: JoyniteDesktop-${{ matrix.name }}
           if-no-files-found: error
           path: |
             desktop/src-tauri/target/release/bundle/nsis/*-setup.exe
             desktop/src-tauri/target/release/bundle/deb/*.deb
             desktop/src-tauri/target/release/bundle/appimage/*.AppImage
-            desktop/PlayniteCarousel-macOS.zip
+            desktop/JoyniteDesktop-macOS.zip

@@ -248,7 +248,7 @@ fn app_game(path: &Path) -> Option<Game> {
         .get("CFBundleIdentifier")
         .and_then(|x| x.as_string())
         .unwrap_or("");
-    if id.starts_with("io.github.joy-arz.Playnite") || id == "io.github.joy-arz.playnite-carousel" {
+    if crate::model::is_launcher_id(id) {
         return None;
     }
     let name = dict

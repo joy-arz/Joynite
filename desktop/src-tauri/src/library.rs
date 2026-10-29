@@ -52,12 +52,13 @@ pub struct Snapshot {
 }
 impl Store {
     pub fn open() -> Self {
-        let root = std::env::var("PLAYNITE_DATA_DIRECTORY")
+        let root = std::env::var("JOYNITE_DATA_DIRECTORY")
+            .or_else(|_| std::env::var("PLAYNITE_DATA_DIRECTORY"))
             .map(PathBuf::from)
             .unwrap_or_else(|_| {
                 dirs::data_dir()
                     .unwrap_or_else(|| PathBuf::from("."))
-                    .join("PlayniteCarousel")
+                    .join("JoyniteDesktop")
             });
         let mut error = None;
         let mut library = Library::default();
@@ -65,16 +66,23 @@ impl Store {
             error = Some(format!("Cannot create library directory: {e}"))
         }
         let file = root.join("library.json");
-        if !file.exists() && std::env::var_os("PLAYNITE_DATA_DIRECTORY").is_none() {
-            if let Some(home) = dirs::home_dir() {
-                let native = home.join("Library/Application Support/PlayniteMac");
-                if native.join("library.json").is_file() {
-                    if let Err(e) = copy_tree(&native.join("Media"), &root.join("Media"))
-                        .and_then(|_| fs::copy(native.join("library.json"), &file).map(|_| ()))
-                    {
-                        error = Some(format!("Native-library migration failed: {e}"))
-                    }
+        if std::env::var_os("JOYNITE_DATA_DIRECTORY").is_none()
+            && std::env::var_os("PLAYNITE_DATA_DIRECTORY").is_none()
+        {
+            let mut candidates = vec![];
+            if let Some(base) = dirs::data_dir() {
+                candidates.push(base.join("PlayniteCarousel"));
+            }
+            if cfg!(target_os = "macos") {
+                if let Some(home) = dirs::home_dir() {
+                    candidates.push(home.join("Library/Application Support/Joynite"));
+                    candidates.push(home.join("Library/Application Support/PlayniteMac"));
                 }
+            }
+            if let Err(e) = migrate_library(&root, &candidates) {
+                error = Some(format!(
+                    "Library migration failed; previous files remain intact: {e}"
+                ));
             }
         }
         if file.exists() {
@@ -214,6 +222,26 @@ impl Store {
         }
         self.save()
     }
+}
+fn migrate_library(root: &Path, sources: &[PathBuf]) -> std::io::Result<()> {
+    if root.join("library.json").exists() {
+        return Ok(());
+    }
+    let Some(source) = sources.iter().find(|s| s.join("library.json").is_file()) else {
+        return Ok(());
+    };
+    fs::create_dir_all(root)?;
+    copy_tree(&source.join("Media"), &root.join("Media"))?;
+    if source.join("library.json.backup").is_file() {
+        fs::copy(
+            source.join("library.json.backup"),
+            root.join("library.json.backup"),
+        )?;
+    }
+    let temporary = root.join("library.migration.tmp");
+    fs::copy(source.join("library.json"), &temporary)?;
+    fs::rename(temporary, root.join("library.json"))?;
+    Ok(())
 }
 fn copy_tree(source: &Path, target: &Path) -> std::io::Result<()> {
     if !source.exists() {
@@ -447,7 +475,7 @@ pub fn uninstall_plan(game: &Game) -> Result<UninstallPlan, String> {
     }
     let path = Path::new(&game.launch_target);
     if cfg!(windows) || game.launch_kind == "desktop" {
-        return Ok(UninstallPlan{title:format!("Manage {} in the system uninstaller",game.name),message:"Use the original installer or system package manager to remove this game. Playnite does not remove a lone executable and leave the installation behind.".into(),method:"system".into()});
+        return Ok(UninstallPlan{title:format!("Manage {} in the system uninstaller",game.name),message:"Use the original installer or system package manager to remove this game. Joynite does not remove a lone executable and leave the installation behind.".into(),method:"system".into()});
     }
     if path.is_symlink()
         || game.install_path != game.launch_target
@@ -460,9 +488,15 @@ pub fn uninstall_plan(game: &Game) -> Result<UninstallPlan, String> {
             .unwrap_or_default()
             .to_string_lossy()
             .to_lowercase()
+            .starts_with("joynite")
+        || path
+            .file_stem()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_lowercase()
             .starts_with("playnite")
     {
-        return Err("Only the game's existing standalone app can be moved to Trash; system apps, links and Playnite are protected".into());
+        return Err("Only the game's existing standalone app can be moved to Trash; system apps, links and Joynite are protected".into());
     }
     if !path
         .extension()
@@ -643,7 +677,7 @@ mod tests {
     #[test]
     fn no_cleanup_for_disconnected_volume() {
         let g = Game {
-            install_path: "/Volumes/Disconnected-Playnite-Test/Games/A.app".into(),
+            install_path: "/Volumes/Disconnected-Joynite-Test/Games/A.app".into(),
             pending_uninstall: Some(true),
             ..Default::default()
         };
@@ -656,5 +690,48 @@ mod tests {
         let raw = fs::read(t.path().join("library.json")).unwrap();
         assert!(serde_json::from_slice::<Library>(&raw).is_err());
         assert_eq!(fs::read(t.path().join("library.json")).unwrap(), b"broken");
+    }
+}
+
+#[cfg(test)]
+mod joynite_migration_tests {
+    use super::*;
+    #[test]
+    fn migration_preserves_previous_library_media_and_new_edits() {
+        let temp = tempfile::tempdir().unwrap();
+        let old = temp.path().join("PlayniteCarousel");
+        let root = temp.path().join("JoyniteDesktop");
+        fs::create_dir_all(old.join("Media/game")).unwrap();
+        fs::write(
+            old.join("library.json"),
+            br#"{"version":1,"games":[],"folders":[]}"#,
+        )
+        .unwrap();
+        fs::write(old.join("Media/game/cover.png"), b"fixture").unwrap();
+        migrate_library(&root, &[old.clone()]).unwrap();
+        assert_eq!(
+            fs::read(root.join("library.json")).unwrap(),
+            fs::read(old.join("library.json")).unwrap()
+        );
+        assert_eq!(
+            fs::read(root.join("Media/game/cover.png")).unwrap(),
+            b"fixture"
+        );
+        fs::write(root.join("library.json"), b"edited").unwrap();
+        migrate_library(&root, &[old.clone()]).unwrap();
+        assert_eq!(fs::read(root.join("library.json")).unwrap(), b"edited");
+        assert!(old.join("library.json").is_file());
+    }
+    #[test]
+    fn launcher_identity_keeps_old_and_new_apps_out_of_library() {
+        for id in [
+            "io.github.joy-arz.JoyniteNative",
+            "io.github.joy-arz.joynite.desktop",
+            "io.github.joy-arz.PlayniteMac",
+            "io.github.joy-arz.playnite-carousel",
+        ] {
+            assert!(crate::model::is_launcher_id(id));
+        }
+        assert!(!crate::model::is_launcher_id("com.game.inscryption"));
     }
 }

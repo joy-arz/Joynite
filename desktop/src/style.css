@@ -663,3 +663,51 @@ form button,
 .custom-footer .primary {
   width: auto;
 }
+
+#support,
+.support-link {
+  display: inline-flex;
+  gap: 7px;
+  align-items: center;
+  color: var(--orange);
+  white-space: nowrap;
+}
+#support img,
+.support-link img {
+  width: 20px;
+  height: 20px;
+}
+#support {
+  margin-left: 10px;
+  font-size: 11px;
+}
+#settings-open {
+  color: #aaa;
+  white-space: nowrap;
+  margin-left: auto;
+}
+#notices:not([hidden]) ~ #settings-open {
+  margin-left: 0;
+}
+.startup-setting {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 16px;
+  margin-top: 24px;
+}
+.startup-setting input {
+  accent-color: var(--orange);
+  min-width: 18px;
+  width: 18px;
+  height: 18px;
+}
+#startup-refresh {
+  color: var(--orange);
+}
+#startup-status {
+  min-height: 20px;
+}
+#status {
+  max-width: 65%;
+}

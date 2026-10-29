@@ -1,4 +1,4 @@
-# Playnite Carousel — shared desktop edition
+# Joynite — shared desktop edition
 
 A redesigned, lightweight game-library UI for Windows, Linux, and macOS. Rust handles local library data, discovery, launching, uninstall handoffs, and metadata. The frontend uses the OS webview, seven reusable carousel slots (five visible), and transform-only movement. It bundles no Node.js runtime, Chromium runtime, or frontend component framework.
 
@@ -34,15 +34,15 @@ Wine Steam discovery reads `drive_c/Program Files (x86)/Steam`, `drive_c/Program
 
 Default search includes `~/.wine`, CrossOver bottles, Whisky bottle locations, and Sikarugir/Wineskin game bundles. Add a custom prefix folder to include a nonstandard installation. A Sikarugir bundle keeps its bundled Wine executable and prefix; native game wrappers continue to launch through macOS. CrossOver routes retain their bottle identity. A missing runtime produces a clear error rather than routing the game through the wrong Steam client.
 
-[Kaon's reference launcher](https://github.com/natbro/kaon/blob/main/scripts/launch_crossover.sh) demonstrates prefix/bottle-bound Wine launching. Existing Kaon-modified native Steam libraries remain native Steam entries; their existing Steam launch configuration stays responsible for redirection. Playnite does not install Kaon hooks or edit `steam_dev.cfg`. The wrapper's custom bootstrap scripts and proprietary runtime behavior are not reimplemented. Real clients, credentials, game runtimes, and anti-cheat compatibility still determine whether an individual game runs.
+[Kaon's reference launcher](https://github.com/natbro/kaon/blob/main/scripts/launch_crossover.sh) demonstrates prefix/bottle-bound Wine launching. Existing Kaon-modified native Steam libraries remain native Steam entries; their existing Steam launch configuration stays responsible for redirection. Joynite does not install Kaon hooks or edit `steam_dev.cfg`. The wrapper's custom bootstrap scripts and proprietary runtime behavior are not reimplemented. Real clients, credentials, game runtimes, and anti-cheat compatibility still determine whether an individual game runs.
 
 ## Uninstall and data
 
 Mac `.app` bundles and standalone Linux AppImages can be moved to Trash after confirmation. Data inside a moved bundle moves with it; external saves remain. Steam opens its uninstall dialog. Wine Steam opens that dialog inside the original prefix. Epic/Heroic open their client. Windows standalone installations open Installed Apps; Linux package-managed entries use the original package/system manager. The app does not delete an executable and claim the whole installation is uninstalled. Metadata stays until a successful Trash operation or a later scan confirms the installation is gone. Temporarily disconnected volumes do not count as removal.
 
-The shared edition stores data in the OS application-data directory under `PlayniteCarousel`. On macOS, the first run copies an existing native `PlayniteMac` library and its media cache into the separate shared-edition directory. The two editions do not concurrently write the same library file. Atomic writes keep `library.json.backup`; invalid libraries enter read-only mode and are preserved.
+The shared edition stores data in the OS application-data directory under `JoyniteDesktop`. On macOS, the first run copies an existing native `Joynite` library and its media cache into the separate shared-edition directory. The two editions do not concurrently write the same library file. Atomic writes keep `library.json.backup`; invalid libraries enter read-only mode and are preserved.
 
-Development variables: `PLAYNITE_DATA_DIRECTORY` isolates a library, and `PLAYNITE_OFFLINE=1` disables network requests while allowing cache hits. `playnite-carousel --diagnostics` prints discovered installations without launching games. Inspect paths/game names before sharing diagnostic output.
+Development variables: `JOYNITE_DATA_DIRECTORY` isolates a library, and `JOYNITE_OFFLINE=1` disables network requests while allowing cache hits. `joynite --diagnostics` prints discovered installations without launching games. Inspect paths/game names before sharing diagnostic output.
 
 See [the audit](../AUDIT.md) and [validation record](../macos/VALIDATION.md) for measurements, completed fixes, and platform/hardware limits. A universal lower-memory claim against upstream requires a like-for-like benchmark; the lightweight design claims refer to the implementation and measured artifacts.
 
@@ -53,3 +53,11 @@ From game details choose **Edit metadata and images…**, or use Add / manage �
 Nine card nodes retain five visible cards plus offscreen buffers. A 380 ms transform transition can be interrupted by further input without queuing old moves. Full foreground images fit their frames; a cached 64-pixel softened copy fills unused space. No live full-resolution blur runs during movement. Reduced-motion preferences disable transitions.
 
 The orange/yellow logo derives from the supplied vector geometry. Rebuild shared assets with `npm run brand`; icons are stored in src-tauri/icons. The application uses the installed system webview and does not bundle a browser or Node runtime.
+
+## Launch at login and support
+
+Settings includes **Launch Joynite when I sign in**, off by default. Windows uses the current user’s startup registration, Linux uses an XDG autostart entry (AppImages retain their original executable path), and macOS uses its login/startup mechanism. No administrator service is installed. Moving the app after enabling startup may require disabling and re-enabling the setting.
+
+The orange Ko-fi cup in the bottom-right footer opens https://ko-fi.com/joyarz in the default browser. Opening Joynite does not load a donation widget or make a support-page network request.
+
+Joynite migrates earlier libraries without deleting their originals. Legacy data directory names and environment-variable aliases remain only for migration/backward compatibility. Original upstream code and licensing still refer to Playnite.

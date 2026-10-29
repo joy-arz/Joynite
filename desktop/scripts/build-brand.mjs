@@ -29,3 +29,13 @@ await copyFile(
   new URL("desktop/src/logo.svg", root),
 );
 console.log("Rendered shared vector mark and application icons.");
+
+const kofi = await readFile(new URL("branding/kofi.svg", root));
+await writeFile(
+  new URL("branding/kofi.png", root),
+  new Resvg(kofi, { fitTo: { mode: "width", value: 96 } }).render().asPng(),
+);
+await copyFile(
+  new URL("branding/kofi.svg", root),
+  new URL("desktop/src/kofi.svg", root),
+);

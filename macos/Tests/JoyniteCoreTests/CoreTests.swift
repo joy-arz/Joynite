@@ -1,6 +1,6 @@
 import Foundation
 import AppKit
-import PlayniteCore
+import JoyniteCore
 
 final class CoreTests {
     func testVDFNestedPathsAndEscapes() throws {
@@ -68,6 +68,27 @@ final class CoreTests {
         XCTAssertNotNil(updated.metadataUpdated)
         XCTAssertThrowsError(try MetadataClient.parseSteam(Data(#"{"480":{"success":false}}"#.utf8), id: "480"))
     }
+    func testJoyniteMigrationAndIdentity() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let old = root.appendingPathComponent("PlayniteMac")
+        let current = root.appendingPathComponent("Joynite")
+        let media = old.appendingPathComponent("Media/game")
+        try FileManager.default.createDirectory(at: media, withIntermediateDirectories: true)
+        var game = Game(id: "migrated", name: "Inscryption", store: .local, launchKind: .application, launchTarget: "/Games/Inscryption.app")
+        game.favorite = true; game.applyCustomMetadata(changes: ["developer": "My studio"])
+        try LibraryStorage(url: old.appendingPathComponent("library.json")).save(LibraryFile(games: [game]))
+        try Data("image fixture".utf8).write(to: media.appendingPathComponent("cover.png"))
+        try LibraryMigration.prepare(destination: current, legacyDirectories: [old])
+        try XCTAssertEqual(try LibraryStorage(url: current.appendingPathComponent("library.json")).load().games, [game])
+        XCTAssertTrue(FileManager.default.fileExists(atPath: current.appendingPathComponent("Media/game/cover.png").path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: old.appendingPathComponent("library.json").path))
+        try LibraryStorage(url: current.appendingPathComponent("library.json")).save(LibraryFile())
+        try LibraryMigration.prepare(destination: current, legacyDirectories: [old])
+        try XCTAssertTrue(try LibraryStorage(url: current.appendingPathComponent("library.json")).load().games.isEmpty)
+        for id in ["io.github.joy-arz.JoyniteNative", "io.github.joy-arz.joynite.desktop", "io.github.joy-arz.PlayniteMac", "io.github.joy-arz.playnite-carousel"] { XCTAssertTrue(JoyniteIdentity.isLauncher(id)) }
+        XCTAssertFalse(JoyniteIdentity.isLauncher("com.game.inscryption"))
+    }
     func testCustomMetadataSurvivesRefreshAndReset() throws {
         var game = Game(id: "custom", name: "Original", store: .local, launchKind: .application, launchTarget: "/Games/Original.app")
         game = Metadata(summary: "Automatic", developer: "Studio", source: "Steam").applying(to: game)
@@ -118,15 +139,15 @@ final class CoreTests {
         defer { try? FileManager.default.removeItem(at: root) }
         let application = root.appendingPathComponent("Fixture.app")
         try FileManager.default.createDirectory(at: application.appendingPathComponent("Contents"), withIntermediateDirectories: true)
-        let plist: [String: Any] = ["CFBundleIdentifier": "test.playnite.fixture", "CFBundleName": "Fixture", "CFBundleDisplayName": "A &amp; B", "CFBundleExecutable": "Fixture"]
+        let plist: [String: Any] = ["CFBundleIdentifier": "test.joynite.fixture", "CFBundleName": "Fixture", "CFBundleDisplayName": "A &amp; B", "CFBundleExecutable": "Fixture"]
         try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0).write(to: application.appendingPathComponent("Contents/Info.plist"))
         let game = try XCTUnwrap(Discovery.application(application))
         XCTAssertEqual(game.name, "A & B")
         XCTAssertEqual(game.launchTarget, application.path)
         XCTAssertNil(Discovery.application(root.appendingPathComponent("missing.app")))
-        let ownApp = root.appendingPathComponent("Playnite.app")
+        let ownApp = root.appendingPathComponent("Joynite.app")
         try FileManager.default.createDirectory(at: ownApp.appendingPathComponent("Contents"), withIntermediateDirectories: true)
-        try PropertyListSerialization.data(fromPropertyList: ["CFBundleIdentifier": "io.github.joy-arz.PlayniteMac"], format: .xml, options: 0).write(to: ownApp.appendingPathComponent("Contents/Info.plist"))
+        try PropertyListSerialization.data(fromPropertyList: ["CFBundleIdentifier": "io.github.joy-arz.Joynite"], format: .xml, options: 0).write(to: ownApp.appendingPathComponent("Contents/Info.plist"))
         XCTAssertNil(Discovery.application(ownApp))
     }
     func testCarouselWrapping() throws {
@@ -260,6 +281,7 @@ private func XCTAssertThrowsError<T>(_ value: @autoclosure () throws -> T, line:
             ("Steam installed-state bitmask and directory checks", suite.testSteamDiscoveryChecksInstalledBitAndDirectory),
             ("Atomic persistence, backup, corrupt library handling", suite.testPersistenceRoundTripAndBackup),
             ("Steam metadata preserves launch identity", suite.testSteamMetadataDoesNotAlterLaunchOrFavorite),
+            ("Joynite migration retains offline media and metadata; self-exclusion", suite.testJoyniteMigrationAndIdentity),
             ("Custom overrides, refresh, serialization, automatic reset", suite.testCustomMetadataSurvivesRefreshAndReset),
             ("Store HTML, entities, relative artwork, host validation", suite.testStoreHTMLAttributeOrderAndEntities),
             ("Epic launch identity, URL escaping, incomplete installs", suite.testEpicLaunchUsesCatalogIdentityAndEscapesInjection),

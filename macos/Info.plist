@@ -1,16 +1,16 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
-<key>CFBundleName</key><string>Playnite for Mac</string>
-<key>CFBundleDisplayName</key><string>Playnite for Mac</string>
-<key>CFBundleIdentifier</key><string>io.github.joy-arz.PlayniteMac</string>
-<key>CFBundleExecutable</key><string>PlayniteMac</string>
+<key>CFBundleName</key><string>Joynite</string>
+<key>CFBundleDisplayName</key><string>Joynite</string>
+<key>CFBundleIdentifier</key><string>io.github.joy-arz.JoyniteNative</string>
+<key>CFBundleExecutable</key><string>Joynite</string>
 <key>CFBundleIconFile</key><string>AppIcon</string>
 <key>CFBundlePackageType</key><string>APPL</string>
-<key>CFBundleShortVersionString</key><string>0.3.0</string>
-<key>CFBundleVersion</key><string>3</string>
+<key>CFBundleShortVersionString</key><string>0.4.0</string>
+<key>CFBundleVersion</key><string>4</string>
 <key>LSMinimumSystemVersion</key><string>14.0</string>
 <key>LSApplicationCategoryType</key><string>public.app-category.games</string>
 <key>NSHighResolutionCapable</key><true/>
-<key>NSHumanReadableCopyright</key><string>Playnite contributors. MIT License.</string>
+<key>NSHumanReadableCopyright</key><string>joy-arz and original Playnite contributors. MIT License.</string>
 </dict></plist>

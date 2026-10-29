@@ -338,6 +338,11 @@ fn main() {
             }
         }))
         .plugin(tauri_plugin_dialog::init())
+        .plugin(
+            tauri_plugin_autostart::Builder::new()
+                .app_name("Joynite")
+                .build(),
+        )
         .setup(|app| {
             let mut store = Store::open();
             let media = store.root.join("Media");
@@ -374,5 +379,5 @@ fn main() {
             save_custom_metadata
         ])
         .run(tauri::generate_context!())
-        .expect("Could not start Playnite Carousel");
+        .expect("Could not start Joynite");
 }

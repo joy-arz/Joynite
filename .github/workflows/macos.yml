@@ -13,10 +13,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Validate core behavior
-        run: swift run --package-path macos PlayniteValidation
+        run: swift run --package-path macos JoyniteValidation
       - name: Build signed application bundle
         run: macos/scripts/build-app.sh
       - uses: actions/upload-artifact@v4
         with:
-          name: PlayniteMac
-          path: macos/dist/PlayniteMac-*.zip
+          name: Joynite
+          path: macos/dist/Joynite-*.zip

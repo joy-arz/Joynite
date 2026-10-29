@@ -98,14 +98,18 @@ impl Client {
         Ok(Self {
             http: reqwest::blocking::Client::builder()
                 .timeout(std::time::Duration::from_secs(18))
-                .user_agent("PlayniteCarousel/0.3 (+https://github.com/joy-arz/Playnite)")
+                .user_agent("Joynite/0.4 (+https://github.com/joy-arz/Joynite)")
                 .redirect(reqwest::redirect::Policy::limited(3))
                 .build()
                 .map_err(|e| e.to_string())?,
         })
     }
     fn request(&self, url: &str, store: bool) -> Result<Vec<u8>, String> {
-        if std::env::var("PLAYNITE_OFFLINE").as_deref() == Ok("1") {
+        if std::env::var("JOYNITE_OFFLINE")
+            .or_else(|_| std::env::var("PLAYNITE_OFFLINE"))
+            .as_deref()
+            == Ok("1")
+        {
             return Err("Offline mode: saved metadata remains available".into());
         }
         let parsed = reqwest::Url::parse(url).map_err(|e| e.to_string())?;

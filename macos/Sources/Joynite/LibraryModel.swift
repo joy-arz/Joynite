@@ -1,6 +1,6 @@
 import AppKit
 import SwiftUI
-import PlayniteCore
+import JoyniteCore
 import UniformTypeIdentifiers
 
 @MainActor final class LibraryModel: ObservableObject {
@@ -42,11 +42,16 @@ import UniformTypeIdentifiers
         }
     }
     init() {
-        let directory = ProcessInfo.processInfo.environment["PLAYNITE_DATA_DIRECTORY"].map { URL(fileURLWithPath: $0, isDirectory: true) } ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("PlayniteMac")
+        let environment = ProcessInfo.processInfo.environment
+        let override = environment["JOYNITE_DATA_DIRECTORY"] ?? environment["PLAYNITE_DATA_DIRECTORY"]
+        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        let directory = override.map { URL(fileURLWithPath: $0, isDirectory: true) } ?? support.appendingPathComponent("Joynite")
         storage = LibraryStorage(url: directory.appendingPathComponent("library.json"))
         media = MediaCache(root: directory.appendingPathComponent("Media", isDirectory: true))
-        do { library = try storage.load() }
-        catch { writable = false; self.error = "Library could not be read. It has been preserved at \(storage.url.path). \(error.localizedDescription)" }
+        do {
+            if override == nil { try LibraryMigration.prepare(destination: directory, legacyDirectories: [support.appendingPathComponent("PlayniteMac")]) }
+            library = try storage.load()
+        } catch { writable = false; self.error = "Library could not be read or migrated. Existing files have been preserved. \(error.localizedDescription)" }
         rebuildVisible(); selection = visible.first?.id
     }
     func startup() async {
@@ -129,7 +134,7 @@ import UniformTypeIdentifiers
         update(current); cacheRevision += 1; status = "Custom metadata and artwork saved offline for \(current.name)."
     }
     func save() {
-        guard writable else { error = "Library is read-only after a load failure. Restore library.json from library.json.backup in Application Support/PlayniteMac and restart."; return }
+        guard writable else { error = "Library is read-only after a load failure. Restore library.json from library.json.backup in Application Support/Joynite and restart."; return }
         do { try storage.save(library) } catch { self.error = "Could not save library: \(error.localizedDescription)" }
     }
     func update(_ game: Game) {
@@ -281,7 +286,7 @@ import UniformTypeIdentifiers
             case .manageClient(let url, let client):
                 guard NSWorkspace.shared.urlForApplication(toOpen: url) != nil else { error = "Install \(client) to manage this installation."; return }
                 let alert = NSAlert(); alert.messageText = "Uninstall through \(client)?"
-                alert.informativeText = "Select \(game.name) in \(client) and use its Uninstall command. Playnite will keep your offline metadata until the installation has been removed."
+                alert.informativeText = "Select \(game.name) in \(client) and use its Uninstall command. Joynite will keep your offline metadata until the installation has been removed."
                 alert.addButton(withTitle: "Open \(client)"); alert.addButton(withTitle: "Cancel")
                 if alert.runModal() == .alertFirstButtonReturn, NSWorkspace.shared.open(url) {
                     var current = game; current.pendingUninstall = true; update(current)
@@ -299,7 +304,7 @@ import UniformTypeIdentifiers
         for game in games where UninstallPlan.confirmedMissing(game) { await finishUninstall(game) }
     }
     func exportLibrary() {
-        let panel = NSSavePanel(); panel.nameFieldStringValue = "PlayniteMac-library.json"; panel.allowedContentTypes = [.json]
+        let panel = NSSavePanel(); panel.nameFieldStringValue = "Joynite-library.json"; panel.allowedContentTypes = [.json]
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do { let encoder = JSONEncoder(); encoder.outputFormatting = [.prettyPrinted, .sortedKeys]; try encoder.encode(library).write(to: url, options: .atomic); status = "Library exported." }
         catch { self.error = error.localizedDescription }

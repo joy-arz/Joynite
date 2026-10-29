@@ -1,4 +1,12 @@
-## Playnite Carousel 0.3.0
+## Joynite 0.4.0
+
+- Rename the app, executable, package, repository, installer labels, and current documentation to Joynite. Original upstream code and license attribution remain intact.
+- Copy previous metadata, cached images, favorites, custom overrides, and history into the new data directories without deleting the previous library. Existing Joynite data takes priority on later launches.
+- Add an opt-in launch-at-login setting on macOS, Windows, and Linux. Native macOS uses SMAppService, while the shared edition uses Tauri autostart with stable AppImage paths. The setting starts off.
+- Add the orange Ko-fi cup in the bottom-right footer and Settings, linking to https://ko-fi.com/joyarz. There is no embedded support widget or background donation-page request.
+- Update the README with actual Inscryption-centered carousel/details screenshots, a settings screenshot, support links, and joy-arz maintainer credit. GitHub’s contributor API already attributes the fork’s commits to joy-arz.
+
+## Joynite 0.3.0
 
 - Longer interruptible sliding, stable positional identities, nine buffered cards with five visible, off-thread image decoding, and a bounded native image cache. Rapid input retargets current motion instead of queuing animations.
 - Separate portrait, inspection, and alternate backdrop caches. Complete foreground artwork stays visible over a softened fill, including wide Roblox artwork. Small uploads are not enlarged during caching.
@@ -11,7 +19,7 @@
 
 Apple Silicon native builds are ad-hoc signed, not notarized. Platform builds and fixture tests do not establish game/anti-cheat compatibility or physical controller support for every device.
 
-## Playnite for Mac 0.2.0
+## Joynite 0.2.0
 
 A black-and-orange, controller-ready carousel with persistent offline metadata.
 

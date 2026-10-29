@@ -1,6 +1,6 @@
 import SwiftUI
 import AppKit
-import PlayniteCore
+import JoyniteCore
 import UniformTypeIdentifiers
 
 @main enum EntryPoint {
@@ -12,13 +12,13 @@ import UniformTypeIdentifiers
             catch { fputs(error.localizedDescription + "\n", stderr); exit(1) }
             return
         }
-        PlayniteApplication.main()
+        JoyniteApplication.main()
     }
 }
-struct PlayniteApplication: App {
+struct JoyniteApplication: App {
     @StateObject private var model = LibraryModel()
     var body: some Scene {
-        WindowGroup("Playnite for Mac") {
+        WindowGroup("Joynite") {
             LibraryView().environmentObject(model).frame(minWidth: 980, minHeight: 660)
                 .preferredColorScheme(.dark)
                 .task {
@@ -45,6 +45,7 @@ struct PlayniteApplication: App {
                     Button("Import and launch help") { model.showHelp = true }
                 }
             }
+        Settings { JoyniteSettingsView() }
     }
 }
 enum Palette {
@@ -83,7 +84,7 @@ struct LibraryView: View {
         }.background(Palette.canvas).tint(Palette.accent)
             .animation(reducedMotion ? nil : .easeInOut(duration: 0.22), value: model.showLibrary)
             .animation(reducedMotion ? nil : .easeInOut(duration: 0.22), value: model.showDetails)
-            .alert("Playnite", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) { Button("OK") { model.error = nil } } message: { Text(model.error ?? "") }
+            .alert("Joynite", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) { Button("OK") { model.error = nil } } message: { Text(model.error ?? "") }
             .sheet(isPresented: $model.showMetadata) { if let game = model.selected { MetadataSheet(game: game).environmentObject(model) } }
             .sheet(isPresented: $model.showCustomMetadata) { if let game = model.selected { CustomMetadataSheet(game: game).environmentObject(model) } }
             .sheet(isPresented: $model.showHelp) { HelpSheet().environmentObject(model) }
@@ -130,7 +131,7 @@ struct LibraryView: View {
     private var header: some View {
         HStack(spacing: 18) {
             Button { model.showLibrary.toggle() } label: { Image(systemName: "sidebar.left").font(.title3).frame(width: 34, height: 34) }.focused($toolbarFocus, equals: 0).focusEffectDisabled().overlay(RoundedRectangle(cornerRadius: 6).stroke(toolbarFocus == 0 ? Palette.accent : .clear, lineWidth: 1.5)).help("Libraries (L)")
-            HStack(spacing: 8) { BrandMark().frame(width: 30, height: 30); Text("Playnite").font(.system(size: 24, weight: .bold, design: .rounded)) }
+            HStack(spacing: 8) { BrandMark().frame(width: 30, height: 30); Text("Joynite").font(.system(size: 24, weight: .bold, design: .rounded)) }
             Text(model.filter).font(.callout).foregroundStyle(.secondary)
             Spacer()
             if model.busy { ProgressView().controlSize(.small) }
@@ -145,6 +146,7 @@ struct LibraryView: View {
                 Button("Add games folder…", action: model.addFolder)
                 Button("Scan installed games") { Task { await model.scan() } }.disabled(model.busy)
                 Button("Publisher metadata catalog") { model.showPublisherCatalog = true }
+                SettingsLink { Text("Settings…") }
                 Button("Help and notices") { model.showHelp = true }
             } label: { Label("Add / manage", systemImage: "plus") }.menuStyle(.borderlessButton).fixedSize()
             Button { model.showDetails.toggle() } label: { Image(systemName: "sidebar.right").font(.title3).frame(width: 34, height: 34) }.focused($toolbarFocus, equals: 1).focusEffectDisabled().overlay(RoundedRectangle(cornerRadius: 6).stroke(toolbarFocus == 1 ? Palette.accent : .clear, lineWidth: 1.5)).help("Game details (Shift)")
@@ -181,6 +183,7 @@ struct LibraryView: View {
                 Spacer()
                 if !model.issues.isEmpty { Button("\(model.issues.count) notices") { model.showHelp = true }.buttonStyle(.plain).foregroundStyle(Palette.accent) }
                 if !input.usingController, let name = input.controllerName { Text("\(name) connected").foregroundStyle(.secondary) }
+                KofiSupportButton()
             }.font(.caption).foregroundStyle(.secondary)
         }.padding(.horizontal, 36).padding(.top, 18).padding(.bottom, 18).background(.black.opacity(0.85))
     }
@@ -426,8 +429,8 @@ struct HelpSheet: View {
                     Text("Windows .exe files and Playnite's Windows plugins do not run in this native port. Games installed through Heroic can use the compatibility runtime configured there.")
                     Text("Metadata is matched automatically by Steam app ID or an exact game title. Use Find metadata for alternate titles, ambiguous matches, or a GOG, Epic, or itch.io store page. Some stores block automated access; a Steam match remains available.")
                     Text("Use Left/Right or A/D to browse the infinite carousel. Return launches immediately. Shift toggles details, L toggles libraries, F toggles favorites, and Escape closes panels. Connected controllers use D-pad/left stick to browse, the bottom face button to launch, the top face button for details, the left face button for libraries, and the right face button to close panels. The hints update when your input changes.")
-                    Text("Metadata and downloaded artwork stay in Application Support/PlayniteMac until uninstall succeeds. Hide keeps metadata; Restore hidden games brings entries back. Native Uninstall moves the application bundle to Trash, including any data inside it. Steam opens its uninstall dialog. Epic/Heroic open their own client for uninstall. Temporarily disconnected drives never trigger automatic cleanup.")
-                    Text("Your library is stored locally in ~/Library/Application Support/PlayniteMac/library.json. The previous save is kept as library.json.backup. Export a library before moving to another Mac.")
+                    Text("Metadata and downloaded artwork stay in Application Support/Joynite until uninstall succeeds. Hide keeps metadata; Restore hidden games brings entries back. Native Uninstall moves the application bundle to Trash, including any data inside it. Steam opens its uninstall dialog. Epic/Heroic open their own client for uninstall. Temporarily disconnected drives never trigger automatic cleanup.")
+                    Text("Your library is stored locally in ~/Library/Application Support/Joynite/library.json. The previous save is kept as library.json.backup. Export a library before moving to another Mac.")
                     if !model.library.folders.isEmpty { Text("Additional game folders").font(.headline); ForEach(model.library.folders, id: \.self) { folder in HStack { Text(folder).font(.caption).textSelection(.enabled); Spacer(); Button("Remove") { model.library.folders.removeAll { $0 == folder }; model.save() } } } }
                     if !model.issues.isEmpty { Text("Scan and metadata notices").font(.headline); ForEach(Array(model.issues.enumerated()), id: \.offset) { _, issue in Text(issue).font(.caption).foregroundStyle(.secondary).textSelection(.enabled) } }
                 }.frame(maxWidth: .infinity, alignment: .leading)

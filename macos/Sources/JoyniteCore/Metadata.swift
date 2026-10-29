@@ -9,10 +9,10 @@ public actor MetadataClient {
     private let session: URLSession
     public init(session: URLSession = .shared) { self.session = session }
     private func request(_ url: URL) async throws -> Data {
-        guard ProcessInfo.processInfo.environment["PLAYNITE_OFFLINE"] != "1" else { throw LibraryError.invalid("Offline mode: saved metadata remains available.") }
+        guard (ProcessInfo.processInfo.environment["JOYNITE_OFFLINE"] ?? ProcessInfo.processInfo.environment["PLAYNITE_OFFLINE"]) != "1" else { throw LibraryError.invalid("Offline mode: saved metadata remains available.") }
         guard url.scheme == "https", Self.allowedHost(url.host ?? "") else { throw LibraryError.invalid("Use an HTTPS Steam, GOG, Epic Games, or itch.io store page.") }
         var request = URLRequest(url: url, cachePolicy: .returnCacheDataElseLoad, timeoutInterval: 20)
-        request.setValue("PlayniteMac/0.1 (+https://github.com/joy-arz/Playnite)", forHTTPHeaderField: "User-Agent")
+        request.setValue("Joynite/0.4 (+https://github.com/joy-arz/Joynite)", forHTTPHeaderField: "User-Agent")
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode), let finalURL = http.url, finalURL.scheme == "https", Self.allowedHost(finalURL.host ?? "") else {
             throw LibraryError.invalid("\(url.host ?? "Store") could not provide metadata. Try a Steam match or a different store page.")

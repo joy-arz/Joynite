@@ -1,4 +1,17 @@
-# macOS validation record
+# Joynite validation record
+
+## Version 0.4.0 — 2026-10-29
+
+The Joynite rename builds successfully on Apple Silicon/macOS Tahoe. Live core validation passes **145 assertions, 0 failures**. The shared Rust backend passes **15 tests**, including migration idempotence, original-library preservation, cached media copying, and legacy/new launcher identity guards.
+
+The installed native Joynite app migrated the existing six-game library and cached artwork from the prior PlayniteMac data directory. The original library remains intact. Native UI checks verified Joynite title/menu/header branding, the orange Ko-fi cup and exact support URL, Inscryption centered in the carousel, and the metadata panel. Actual screenshots of these views are committed in docs/screenshots.
+
+The native Settings window started with launch-at-login off. Enabling it registered successfully through SMAppService and showed on; disabling it unregistered successfully and returned to off. The setting was left off. This validates registration state, not a machine reboot.
+
+Shared startup uses Tauri autostart 2.7.0 with explicit permissions for status, enable, and disable. Its Linux AppImage path handling was checked in the installed plugin source. Platform build results and shared UI checks are recorded with the release. No real game was uninstalled during this rename.
+
+Previous validation history follows. Names in earlier records describe the predecessor versions; original artifacts remain available under their original tags.
+
 
 ## Version 0.3.0 — 2026-10-28
 
@@ -6,7 +19,7 @@ Native release packaging succeeds on Apple Silicon/macOS Tahoe. Live validation 
 
 The shared Rust backend passes 13 tests and the JavaScript navigation model passes 5 tests (20,000 positions, wrapping and stable buffered identities). The prior checkpoint produced Windows NSIS, Linux DEB/AppImage, and macOS shared-app artifacts in CI. Windows and Linux CI builds passed for the final shared application code. Both macOS editions built locally and passed strict ad-hoc signature verification; hosted macOS jobs were queued during packaging.
 
-A disposable copy of the real six-game library runs with PLAYNITE_OFFLINE=1. Native UI checks verified the new logo, orange toolbar focus, five visible cards, uncropped foreground over softened fill, and saving a custom Roblox developer and cover from the editor. The custom Roblox developer and image survived an offline restart. Reset custom text and Use automatic restored the cached publisher data. Shared UI checks verified a saved developer override and twelve rapid Right-arrow presses wrapping to the same selected index. Changes are confined to /tmp validation data. No real game was uninstalled.
+A disposable copy of the real six-game library runs with JOYNITE_OFFLINE=1. Native UI checks verified the new logo, orange toolbar focus, five visible cards, uncropped foreground over softened fill, and saving a custom Roblox developer and cover from the editor. The custom Roblox developer and image survived an offline restart. Reset custom text and Use automatic restored the cached publisher data. Shared UI checks verified a saved developer override and twelve rapid Right-arrow presses wrapping to the same selected index. Changes are confined to /tmp validation data. No real game was uninstalled.
 
 No numeric FPS or universal performance comparison is claimed from these checks. See ../AUDIT.md for findings and remaining controller/client validation limits.
 
@@ -16,9 +29,9 @@ Environment: Apple Silicon, macOS Tahoe 26.6 (Darwin 25.6.0), Swift 6.3.1, Comma
 
 ### Automated checks
 
-`swift run --package-path macos PlayniteValidation --live`: **102 assertions, 0 failures.**
+`swift run --package-path macos JoyniteValidation --live`: **102 assertions, 0 failures.**
 
-`PLAYNITE_OFFLINE=1 macos/.build/debug/PlayniteValidation`: **92 assertions, 0 failures.** Network requests are explicitly disabled in this mode; existing disk-cache hits still work.
+`JOYNITE_OFFLINE=1 macos/.build/debug/JoyniteValidation`: **92 assertions, 0 failures.** Network requests are explicitly disabled in this mode; existing disk-cache hits still work.
 
 Coverage:
 
@@ -41,7 +54,7 @@ Coverage:
 
 ### Isolated offline and uninstall exercise
 
-A separate application bundle used `PLAYNITE_DATA_DIRECTORY` for a disposable one-game library and `PLAYNITE_OFFLINE=1` to disable network requests. Its only application was a newly created test fixture. The fixture did not contain user game data.
+A separate application bundle used `JOYNITE_DATA_DIRECTORY` for a disposable one-game library and `JOYNITE_OFFLINE=1` to disable network requests. Its only application was a newly created test fixture. The fixture did not contain user game data.
 
 1. Opened the isolated app and observed its saved description, cover, background, and Saved offline indicator with networking disabled.
 2. Pressed Return while details were hidden. The fixture wrote its launch marker and the library recorded the successful launch callback. No metadata panel opened.

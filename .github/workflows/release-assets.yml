@@ -24,8 +24,8 @@ jobs:
     steps:
       - name: Retrieve platform packages
         run: |
-          gh run download "$ARTIFACT_RUN" --name PlayniteCarousel-Windows --dir packages/Windows
-          gh run download "$ARTIFACT_RUN" --name PlayniteCarousel-Linux --dir packages/Linux
+          gh run download "$ARTIFACT_RUN" --name JoyniteDesktop-Windows --dir packages/Windows
+          gh run download "$ARTIFACT_RUN" --name JoyniteDesktop-Linux --dir packages/Linux
       - name: Publish verified build artifacts
         run: |
           python3 - <<'PY'

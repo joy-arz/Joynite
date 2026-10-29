@@ -1,12 +1,12 @@
-# Playnite for Mac
+# Joynite
 
-A native SwiftUI library and launcher in this Playnite fork. The Mac application lives in `macos/`; the original MIT-licensed Windows source remains in `source/`.
+A native SwiftUI library and launcher in this Joynite fork. The Mac application lives in `macos/`; the original MIT-licensed Windows source remains in `source/`.
 
 ## Install
 
-Download the Apple Silicon ZIP from [this fork's releases](https://github.com/joy-arz/Playnite/releases), unzip **Playnite for Mac.app**, and move it into Applications. Builds are ad-hoc signed, not Apple notarized. Downloaded copies may require **System Settings → Privacy & Security → Open Anyway**.
+Download the Apple Silicon ZIP from [this fork's releases](https://github.com/joy-arz/Joynite/releases), unzip **Joynite.app**, and move it into Applications. Builds are ad-hoc signed, not Apple notarized. Downloaded copies may require **System Settings → Privacy & Security → Open Anyway**.
 
-On the development Mac, the app is installed in `~/Applications/Playnite for Mac.app`. macOS Tahoe on Apple Silicon is tested; the deployment target is macOS 14.
+On the development Mac, the app is installed in `~/Applications/Joynite.app`. macOS Tahoe on Apple Silicon is tested; the deployment target is macOS 14.
 
 ## The carousel
 
@@ -29,7 +29,7 @@ Steam portrait covers are preferred over wide banners. Portrait covers, horizont
 
 Navigation shortcuts pause while typing, or while a sheet/dialog is open. Return in search and metadata forms does not launch a game. Shift inside a text field retains normal typing behavior.
 
-Controllers supported by Apple's extended Game Controller profile are detected at connection/disconnection. D-pad or left stick browses with hold-to-repeat; shoulders also browse. Bottom face button launches, top face button toggles details, left face button toggles libraries, and right face button closes panels. Right-stick click toggles favorite. Hints switch on actual keyboard/mouse/controller use and use the connected controller's symbol names. Input is handled only while Playnite is active, so it does not intercept game controls. Physical controller compatibility depends on macOS and the device; see validation notes.
+Controllers supported by Apple's extended Game Controller profile are detected at connection/disconnection. D-pad or left stick browses with hold-to-repeat; shoulders also browse. Bottom face button launches, top face button toggles details, left face button toggles libraries, and right face button closes panels. Right-stick click toggles favorite. Hints switch on actual keyboard/mouse/controller use and use the connected controller's symbol names. Input is handled only while Joynite is active, so it does not intercept game controls. Physical controller compatibility depends on macOS and the device; see validation notes.
 
 ## Import and metadata
 
@@ -49,7 +49,7 @@ Overrides are per field and survive automatic refresh. Untouched fields still re
 
 ## Offline retention
 
-Metadata lives in `~/Library/Application Support/PlayniteMac/library.json`. Covers and alternate backgrounds are downloaded, validated, resized to a maximum dimension of 1200 pixels for portrait/inspection images and 1600 pixels for backgrounds/custom images, and saved as PNGs under `Media/<game-id-hash>/`. The library stores their cache keys. Rendering reads local files, so already cached artwork and metadata remain usable offline and across restarts. Remote failures preserve the last successful files. Existing 0.1 records migrate without losing favorites, launch history, or descriptions.
+Metadata lives in `~/Library/Application Support/Joynite/library.json`. Covers and alternate backgrounds are downloaded, validated, resized to a maximum dimension of 1200 pixels for portrait/inspection images and 1600 pixels for backgrounds/custom images, and saved as PNGs under `Media/<game-id-hash>/`. The library stores their cache keys. Rendering reads local files, so already cached artwork and metadata remain usable offline and across restarts. Remote failures preserve the last successful files. Existing 0.1 records migrate without losing favorites, launch history, or descriptions.
 
 **Hide from library** keeps the record and cache. Missing external disks do not trigger cleanup. An explicit refresh can update metadata; it does not erase valid fields when a response omits them. Text exported as JSON remains portable; the image cache stays on its originating Mac and can be repopulated online on a new Mac.
 
@@ -61,10 +61,10 @@ Use **Uninstall…** in game details or the card context menu.
 
 - A native `.app` is moved to Trash after confirmation. Data inside its bundle moves with it, including saves embedded in a Wine wrapper. External save files are left alone. The library entry and image cache are removed only when the move succeeds. Restore from Trash if needed.
 - Steam opens `steam://uninstall/ID`; complete or cancel the dialog in Steam.
-- Epic/Heroic open their client; use that client's Uninstall command. These clients do not provide a common supported uninstall URL, so Playnite does not bypass their installation records.
-- For store handoffs, cached metadata stays until a return to Playnite or a scan confirms the game path is gone and its parent is accessible. Disconnected volumes never count as removal. Cancelled or failed operations keep cached metadata.
+- Epic/Heroic open their client; use that client's Uninstall command. These clients do not provide a common supported uninstall URL, so Joynite does not bypass their installation records.
+- For store handoffs, cached metadata stays until a return to Joynite or a scan confirms the game path is gone and its parent is accessible. Disconnected volumes never count as removal. Cancelled or failed operations keep cached metadata.
 
-Running native applications must be quit first. System apps, symlinks, nested application bundles, and Playnite itself are protected from the native Trash action.
+Running native applications must be quit first. System apps, symlinks, nested application bundles, and Joynite itself are protected from the native Trash action.
 
 ## Launch support and limits
 
@@ -78,15 +78,23 @@ Requires Swift 5.9+ and Apple's macOS SDK from Command Line Tools or Xcode. XCTe
 
 ```sh
 cd macos
-swift run PlayniteValidation
-swift run PlayniteValidation --live
-PLAYNITE_OFFLINE=1 swift run PlayniteValidation
+swift run JoyniteValidation
+swift run JoyniteValidation --live
+JOYNITE_OFFLINE=1 swift run JoyniteValidation
 ./scripts/build-app.sh --install
-open "$HOME/Applications/Playnite for Mac.app"
+open "$HOME/Applications/Joynite.app"
 ```
 
 The build script produces an optimized `.app` and a versioned ZIP in `dist/`. GitHub CI validates core behavior and packages the app. Intel builds can be produced on Intel Macs but are untested.
 
-Development/validation environment variables: `PLAYNITE_DATA_DIRECTORY` selects a separate library directory; `PLAYNITE_OFFLINE=1` disables metadata and artwork network requests while allowing existing disk-cache hits. These allow isolated offline/uninstall tests without touching real libraries or games.
+Development/validation environment variables: `JOYNITE_DATA_DIRECTORY` selects a separate library directory; `JOYNITE_OFFLINE=1` disables metadata and artwork network requests while allowing existing disk-cache hits. These allow isolated offline/uninstall tests without touching real libraries or games.
 
-`PlayniteMac --diagnostics` prints discovered games as JSON without launching games or changing the library. Paths and game names appear in that output; inspect before sharing it. See [VALIDATION.md](VALIDATION.md) for observed checks and remaining hardware/provider limitations.
+`Joynite --diagnostics` prints discovered games as JSON without launching games or changing the library. Paths and game names appear in that output; inspect before sharing it. See [VALIDATION.md](VALIDATION.md) for observed checks and remaining hardware/provider limitations.
+
+## Launch at login and support
+
+Settings includes **Launch Joynite when I sign in**, off by default. Windows uses the current user’s startup registration, Linux uses an XDG autostart entry (AppImages retain their original executable path), and macOS uses its login/startup mechanism. No administrator service is installed. Moving the app after enabling startup may require disabling and re-enabling the setting.
+
+The orange Ko-fi cup in the bottom-right footer opens https://ko-fi.com/joyarz in the default browser. Opening Joynite does not load a donation widget or make a support-page network request.
+
+Joynite migrates earlier libraries without deleting their originals. Legacy data directory names and environment-variable aliases remain only for migration/backward compatibility. Original upstream code and licensing still refer to Playnite.

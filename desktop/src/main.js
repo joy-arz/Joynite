@@ -11,20 +11,27 @@ import {
 } from "./model.mjs";
 import "./style.css";
 import logo from "./logo.svg";
+import kofi from "./kofi.svg";
+import {
+  enable as enableStartup,
+  disable as disableStartup,
+  isEnabled as isStartupEnabled,
+} from "@tauri-apps/plugin-autostart";
 
 const $ = (s) => document.querySelector(s);
 $("#app").innerHTML = `
 <div class="backdrop" aria-hidden="true"><img id="fill0" class="image-fill"><img id="bg0"><img id="fill1" class="image-fill"><img id="bg1"><div class="shade"></div></div>
-<header><button id="libraries" class="icon" title="Libraries (L)" aria-label="Toggle libraries">☰</button><strong class="brand"><img src="${logo}" alt=""> Playnite</strong><span id="filter-label">All games</span><div class="search"><span>⌕</span><input id="search" type="search" placeholder="Find a game" aria-label="Find a game"></div><button id="manage">＋ Add / manage</button><button id="details-toggle" class="icon" title="Details (Shift)" aria-label="Toggle game details">ⓘ</button></header>
+<header><button id="libraries" class="icon" title="Libraries (L)" aria-label="Toggle libraries">☰</button><strong class="brand"><img src="${logo}" alt=""> Joynite</strong><span id="filter-label">All games</span><div class="search"><span>⌕</span><input id="search" type="search" placeholder="Find a game" aria-label="Find a game"></div><button id="manage">＋ Add / manage</button><button id="details-toggle" class="icon" title="Details (Shift)" aria-label="Toggle game details">ⓘ</button></header>
 <main><section id="stage" aria-label="Game carousel"><div id="cards"></div><button id="prev" class="nav" aria-label="Previous game">‹</button><button id="next" class="nav" aria-label="Next game">›</button><div id="empty" hidden><h1>Your next game starts here.</h1><p>Add a game or scan your installed libraries.</p><button id="empty-add">Add game</button></div></section><div class="caption"><span id="position"></span><span class="orange-line"></span><span id="genres"></span><span id="offline"></span></div></main>
-<footer><div class="hints" id="hints"></div><span id="input-kind">⌨ Keyboard</span><div class="status-row"><span id="status" role="status">Loading your library…</span><button id="notices" hidden></button><button id="cancel" hidden>Stop metadata fetch</button></div></footer>
+<footer><div class="hints" id="hints"></div><span id="input-kind">⌨ Keyboard</span><div class="status-row"><span id="status" role="status">Loading your library…</span><button id="notices" hidden></button><button id="cancel" hidden>Stop metadata fetch</button><button id="settings-open" title="Settings (Command/Ctrl+,)" aria-label="Joynite settings">⚙ Settings</button><button id="support" title="Support joy-arz on Ko-fi" aria-label="Support Joynite on Ko-fi"><img src="${kofi}" alt="">Support Joynite</button></div></footer>
 <aside id="library-panel" hidden><div class="panel-heading"><h2>Libraries</h2><button id="library-close" aria-label="Close libraries">×</button></div><nav id="filters"></nav><div class="panel-bottom"><button id="restore">Restore hidden games</button><button id="help">Help and notices</button></div></aside>
 <aside id="details" hidden><div class="panel-heading"><h2>Game details</h2><button id="details-close" aria-label="Close details">×</button></div><div id="detail-content"></div></aside>
-<dialog id="actions"><div class="dialog-heading"><h2>Your library</h2><button data-close aria-label="Close">×</button></div><div class="action-grid"><button id="add-game">Add game application</button><button id="add-folder">Add games / Wine-prefix folder</button><button id="scan">Scan installed games</button><button id="refresh">Refresh metadata</button><button id="edit-custom">Edit selected metadata / images</button><button id="publishers">Publisher metadata catalog</button><button id="import">Import library JSON</button><button id="export">Export library JSON</button><button id="action-help">Help and notices</button></div></dialog>
+<dialog id="actions"><div class="dialog-heading"><h2>Your library</h2><button data-close aria-label="Close">×</button></div><div class="action-grid"><button id="add-game">Add game application</button><button id="add-folder">Add games / Wine-prefix folder</button><button id="scan">Scan installed games</button><button id="refresh">Refresh metadata</button><button id="edit-custom">Edit selected metadata / images</button><button id="publishers">Publisher metadata catalog</button><button id="import">Import library JSON</button><button id="export">Export library JSON</button><button id="action-settings">Settings</button><button id="action-help">Help and notices</button></div></dialog>
 <dialog id="metadata"><div class="dialog-heading"><h2>Find metadata</h2><button data-close aria-label="Close">×</button></div><p id="match-for"></p><form id="search-form"><input id="metadata-query" placeholder="Game title" aria-label="Game title"><button>Search Steam</button></form><div id="matches"></div><form id="page-form"><input id="metadata-page" placeholder="HTTPS Steam, GOG, itch.io or publisher page" aria-label="Store page"><button>Fetch page</button></form></dialog>
 <dialog id="publisher-list"><div class="dialog-heading"><h2>Beyond the stores</h2><button data-close aria-label="Close">×</button></div><p>Bundled metadata does not change a game's platform compatibility.</p><div id="publisher-items"></div></dialog>
 <dialog id="help-dialog"><div class="dialog-heading"><h2>Library help</h2><button data-close aria-label="Close">×</button></div><div id="help-content"></div></dialog>
 <dialog id="custom-editor"><div class="dialog-heading"><h2>Custom metadata & images</h2><button data-close aria-label="Close">×</button></div><p>Saved locally. Automatic refresh preserves your overrides. Images are copied into the offline cache.</p><form id="custom-form" class="custom-form"><label>Title<input id="custom-name" required maxlength="50000"></label><label>Developer<input id="custom-developer" maxlength="50000"></label><label>Release date<input id="custom-releaseDate" maxlength="50000"></label><label>Genres, separated by commas<input id="custom-genres" maxlength="50000"></label><label>Description<textarea id="custom-summary" maxlength="50000"></textarea></label><button id="custom-reset-text" type="button">Restore automatic text</button><div id="custom-images"></div><div class="custom-footer"><button id="custom-cancel" type="button">Cancel</button><button class="primary" type="submit">Save offline</button></div></form></dialog>
+<dialog id="settings-dialog"><div class="dialog-heading"><h2>Joynite settings</h2><button data-close aria-label="Close">×</button></div><label class="startup-setting"><input id="startup-enabled" type="checkbox">Launch Joynite when I sign in</label><p>Open your library automatically after signing in to this computer. Off by default. Keep Joynite in its installed location so the startup entry stays valid.</p><p id="startup-status" role="status"></p><button id="startup-refresh">Check startup setting</button><p>Maintained by joy-arz.</p><button id="settings-support" class="support-link"><img src="${kofi}" alt="">Support Joynite on Ko-fi</button></dialog>
 <div id="announcement" class="sr-only" aria-live="polite"></div>`;
 
 let data = { games: [], folders: [], notices: [], platform: "" },
@@ -63,7 +70,7 @@ const typing = (target) =>
   (target.matches("input,textarea,select") || target.isContentEditable);
 function report(error) {
   status(String(error));
-  message(String(error), { title: "Playnite", kind: "error" }).catch(() => {});
+  message(String(error), { title: "Joynite", kind: "error" }).catch(() => {});
 }
 function snapshot(next) {
   if ((next.revision || 0) < (data.revision || 0)) return;
@@ -572,7 +579,7 @@ function showHelp() {
     "Three local artwork roles: fitted portrait cover, landscape inspection image, alternate backdrop. Missing roles use the last cached fallback; no remote image request is made by the renderer.",
     "Native Mac apps and Linux AppImages can move to Trash. Steam and Wine Steam open the correct client uninstall dialog. Other package installations use their original client/system manager. Data in a moved application bundle moves with it; external saves stay in place.",
     "Wine/CrossOver/Sikarugir entries preserve their prefix identity and reuse the installed runtime. No Wine, Steam, or wrapper settings are rewritten. No new game compatibility or anti-cheat support is supplied.",
-    "The shared desktop edition copies a native Mac library on first run into its own PlayniteCarousel data directory. JSON export includes metadata; cached images remain on this computer.",
+    "The shared desktop edition copies a native Mac library on first run into its own JoyniteDesktop data directory. JSON export includes metadata; cached images remain on this computer.",
     "Notices",
     ...data.notices,
     ...data.folders.map((s) => `Additional folder: ${s}`),
@@ -626,6 +633,11 @@ function renderHints() {
 window.addEventListener("keydown", (event) => {
   useKeyboard();
   if (modalOpen()) return;
+  if ((event.metaKey || event.ctrlKey) && event.key === ",") {
+    event.preventDefault();
+    showSettings();
+    return;
+  }
   if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "f") {
     event.preventDefault();
     $("#search").focus();
@@ -839,7 +851,7 @@ $("#export").onclick = async () => {
   try {
     const path = await save({
       title: "Export library",
-      defaultPath: "Playnite-library.json",
+      defaultPath: "Joynite-library.json",
       filters: [{ name: "Library JSON", extensions: ["json"] }],
     });
     if (path) {
@@ -1004,3 +1016,52 @@ $("#custom-form").onsubmit = async (event) => {
     button.disabled = false;
   }
 };
+
+async function refreshStartup() {
+  const toggle = $("#startup-enabled");
+  toggle.disabled = true;
+  try {
+    toggle.checked = await isStartupEnabled();
+    $("#startup-status").textContent = toggle.checked
+      ? "Joynite will open after sign-in."
+      : "Startup launch is off.";
+  } catch (error) {
+    $("#startup-status").textContent = String(error);
+    throw error;
+  } finally {
+    toggle.disabled = false;
+  }
+}
+async function showSettings() {
+  closeDialogs();
+  $("#settings-dialog").showModal();
+  try {
+    await refreshStartup();
+  } catch {}
+}
+$("#startup-enabled").onchange = async (event) => {
+  const toggle = event.target,
+    desired = toggle.checked;
+  toggle.disabled = true;
+  try {
+    if (desired) await enableStartup();
+    else await disableStartup();
+    await refreshStartup();
+  } catch (error) {
+    try {
+      toggle.checked = await isStartupEnabled();
+    } catch {
+      toggle.checked = !desired;
+    }
+    $("#startup-status").textContent =
+      `Could not update startup launch: ${error}`;
+  } finally {
+    toggle.disabled = false;
+  }
+};
+$("#startup-refresh").onclick = () => refreshStartup().catch(() => {});
+$("#settings-open").onclick = showSettings;
+$("#action-settings").onclick = showSettings;
+for (const id of ["#support", "#settings-support"])
+  $(id).onclick = () =>
+    invoke("open_page", { url: "https://ko-fi.com/joyarz" }).catch(report);

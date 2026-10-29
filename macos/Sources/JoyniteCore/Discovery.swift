@@ -95,7 +95,7 @@ public struct Discovery {
     public static func application(_ url: URL, store: Store = .local) -> Game? {
         guard url.isFileURL, url.pathExtension.lowercased() == "app", FileManager.default.fileExists(atPath: url.appendingPathComponent("Contents/Info.plist").path) else { return nil }
         let bundle = Bundle(url: url)
-        guard bundle?.bundleIdentifier?.lowercased().hasPrefix("io.github.joy-arz.playnite") != true else { return nil }
+        guard !JoyniteIdentity.isLauncher(bundle?.bundleIdentifier ?? "") else { return nil }
         let name = bundle?.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String ?? url.deletingPathExtension().lastPathComponent.replacingOccurrences(of: "_", with: " ")
         return Game(id: "app:" + url.standardizedFileURL.path, name: HTML.text(name), store: store, launchKind: .application, launchTarget: url.path, installPath: url.path)
     }

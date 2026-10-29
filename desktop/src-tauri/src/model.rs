@@ -196,3 +196,8 @@ pub fn hash(value: &str) -> String {
     use sha2::{Digest, Sha256};
     format!("{:x}", Sha256::digest(value.as_bytes()))
 }
+
+pub fn is_launcher_id(id: &str) -> bool {
+    let id = id.to_ascii_lowercase();
+    id.starts_with("io.github.joy-arz.joynite") || id.starts_with("io.github.joy-arz.playnite")
+}

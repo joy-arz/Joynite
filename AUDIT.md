@@ -48,3 +48,9 @@ Physical controller hardware and authenticated Windows/Wine/CrossOver/Sikarugir 
 Native core: 136 live assertions and 126 explicitly offline assertions, all passing. Shared backend: 13 tests, all passing. Navigation/input model: 5 tests, including 20,000 positions and stable identities for nine buffered nodes, all passing. Custom text survives provider refresh and serialization, reset restores the latest automatic values, and imported images survive removal of their source file. A 120×40 image stays 120×40 rather than being enlarged to 1600 pixels. Soft fills are cached at no more than 64 pixels per dimension.
 
 UI checks use disposable offline copies of the six-game native library. They do not uninstall or alter real games. FPS is not inferred from passing unit tests; smoothness remains subject to the host compositor and display workload. Physical controller and authenticated compatibility-client testing remain outstanding hardware/client checks.
+
+## Joynite 0.4 rename and startup settings
+
+Joynite branding replaces the prior app, executable, package, and installer names. The native library is copied from PlayniteMac to Joynite, while the shared edition copies its earlier PlayniteCarousel library to JoyniteDesktop. Source metadata and media remain untouched; existing Joynite data wins on later starts. Self-discovery and uninstall guards recognize both old and new bundle identifiers.
+
+Startup is opt-in. Native macOS uses SMAppService and reports required user approval; the shared app uses Tauri’s autostart plugin for Windows, Linux/XDG, and macOS. The plugin preserves AppImage paths outside temporary mounts. The support link is a bundled orange SVG/PNG with an explicit external-browser action, not an embedded web widget.
