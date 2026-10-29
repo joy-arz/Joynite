@@ -72,3 +72,57 @@ mod tests {
         assert!(open(missing.as_os_str(), "", Some(temp.path())).is_err());
     }
 }
+
+pub fn pick_game() -> Result<Option<String>, String> {
+    use std::os::windows::ffi::OsStringExt;
+    use windows_sys::Win32::UI::Controls::Dialogs::{
+        CommDlgExtendedError, GetOpenFileNameW, OFN_EXPLORER, OFN_FILEMUSTEXIST, OFN_NOCHANGEDIR,
+        OFN_NODEREFERENCELINKS, OFN_PATHMUSTEXIST, OPENFILENAMEW,
+    };
+    let mut buffer = vec![0u16; 32768];
+    let filter: Vec<u16> = "Windows game or shortcut\0*.exe;*.lnk\0\0"
+        .encode_utf16()
+        .collect();
+    let title = wide(OsStr::new("Choose a game or its working desktop shortcut"))?;
+    unsafe {
+        let initialized = CoInitializeEx(
+            std::ptr::null(),
+            (COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE) as u32,
+        );
+        if initialized < 0 {
+            return Err(format!(
+                "Windows picker initialization failed (HRESULT {initialized:#x})"
+            ));
+        }
+        let mut dialog: OPENFILENAMEW = std::mem::zeroed();
+        dialog.lStructSize = std::mem::size_of::<OPENFILENAMEW>() as u32;
+        dialog.lpstrFilter = filter.as_ptr();
+        dialog.nFilterIndex = 1;
+        dialog.lpstrFile = buffer.as_mut_ptr();
+        dialog.nMaxFile = buffer.len() as u32;
+        dialog.lpstrTitle = title.as_ptr();
+        // Preserve the .lnk itself, rather than resolving it and losing arguments.
+        dialog.Flags = OFN_EXPLORER
+            | OFN_FILEMUSTEXIST
+            | OFN_PATHMUSTEXIST
+            | OFN_NOCHANGEDIR
+            | OFN_NODEREFERENCELINKS;
+        let selected = GetOpenFileNameW(&mut dialog) != 0;
+        let error = if selected { 0 } else { CommDlgExtendedError() };
+        CoUninitialize();
+        if selected {
+            let length = buffer.iter().position(|c| *c == 0).unwrap_or(buffer.len());
+            Ok(Some(
+                std::ffi::OsString::from_wide(&buffer[..length])
+                    .to_string_lossy()
+                    .into_owned(),
+            ))
+        } else if error == 0 {
+            Ok(None)
+        } else {
+            Err(format!(
+                "Windows could not open the game picker (dialog error {error:#x})"
+            ))
+        }
+    }
+}

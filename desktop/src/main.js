@@ -548,7 +548,7 @@ async function hydrate(all = false) {
 }
 async function addGame() {
   closeDialogs();
-  const path = await open({
+  const path = data.platform === "windows" ? await invoke("pick_windows_game") : await open({
     title: "Add a game application",
     directory: false,
     multiple: false,

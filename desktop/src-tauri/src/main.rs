@@ -145,6 +145,19 @@ async fn add_folder(state: State<'_>, path: String) -> Result<Snapshot, String> 
     .map_err(|e| e.to_string())?
 }
 #[tauri::command]
+async fn pick_windows_game() -> Result<Option<String>, String> {
+    #[cfg(windows)]
+    return tauri::async_runtime::spawn_blocking(|| {
+        std::thread::spawn(crate::windows_launch::pick_game)
+            .join()
+            .map_err(|_| "Windows game picker stopped unexpectedly".to_string())?
+    })
+    .await
+    .map_err(|e| e.to_string())?;
+    #[cfg(not(windows))]
+    Err("Windows game selection requires Windows".into())
+}
+#[tauri::command]
 async fn add_game(state: State<'_>, path: String) -> Result<Snapshot, String> {
     let path = PathBuf::from(path);
     if !path.exists() {
@@ -465,6 +478,7 @@ fn main() {
             restore_hidden,
             add_folder,
             add_game,
+            pick_windows_game,
             search_metadata,
             apply_metadata,
             publisher_catalog,
