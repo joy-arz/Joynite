@@ -516,6 +516,10 @@ fn scan_clients(home: &Path, out: &mut Scan) {
         ]
         .join(":");
         out.games.push(Game {
+            extra: crate::epic::identifiers(
+                v["CatalogNamespace"].as_str().unwrap_or(""),
+                v["CatalogItemId"].as_str().unwrap_or(""),
+            ),
             id: format!("epic:{id}"),
             name: v["DisplayName"].as_str().unwrap_or(id).into(),
             store: "Epic".into(),
@@ -573,7 +577,7 @@ fn scan_clients(home: &Path, out: &mut Scan) {
                 .as_str()
                 .or(item["name"].as_str())
                 .unwrap_or(id);
-            out.games.push(Game {
+            let mut game = Game {
                 id: format!("heroic:{store}:{id}"),
                 name: name.into(),
                 store: store.into(),
@@ -587,7 +591,16 @@ fn scan_clients(home: &Path, out: &mut Scan) {
                 install_path: path.into(),
                 store_id: id.into(),
                 ..Default::default()
-            })
+            };
+            if store == "Epic" && !id.contains(['/', '\\', ':']) && id != "." && id != ".." {
+                crate::epic::attach_local(
+                    &mut game,
+                    &data
+                        .join("heroic/legendaryConfig/legendary/metadata")
+                        .join(format!("{id}.json")),
+                );
+            }
+            out.games.push(game);
         }
     }
 }

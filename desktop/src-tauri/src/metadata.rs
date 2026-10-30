@@ -46,6 +46,7 @@ pub struct Details {
     pub developer: String,
     pub release_date: String,
     pub artwork: String,
+    pub portrait: String,
     pub background: String,
     pub url: String,
     pub source: String,
@@ -69,6 +70,7 @@ impl Details {
             (&mut self.developer, &other.developer),
             (&mut self.release_date, &other.release_date),
             (&mut self.artwork, &other.artwork),
+            (&mut self.portrait, &other.portrait),
             (&mut self.background, &other.background),
             (&mut self.url, &other.url),
         ] {
@@ -122,6 +124,12 @@ impl Details {
         game.apply_values(&automatic);
         game.apply_values(&game.metadata_overrides.clone().unwrap_or_default());
         game.automatic_metadata = Some(automatic);
+        if !self.portrait.is_empty() {
+            game.extra.insert(
+                "automaticPortrait".into(),
+                Value::String(self.portrait.clone()),
+            );
+        }
         if !self.artwork.is_empty() {
             game.artwork = self.artwork.clone()
         }
@@ -294,8 +302,50 @@ impl Client {
                 }
             }
         }
+        if parsed.scheme() == "https" {
+            if let Some(slug) = crate::epic::page_slug(&parsed) {
+                let parts: Vec<_> = parsed.path_segments().unwrap().collect();
+                let index = parts
+                    .iter()
+                    .position(|p| *p == "p" || *p == "product")
+                    .unwrap();
+                return self.epic_product(
+                    &slug,
+                    parts
+                        .get(index + 2)
+                        .copied()
+                        .filter(|s| !s.is_empty())
+                        .unwrap_or("home"),
+                    None,
+                );
+            }
+        }
         let html = String::from_utf8(self.request(url, true)?).map_err(|e| e.to_string())?;
         parse_html(&html, url)
+    }
+    fn epic_product(&self, slug: &str, page: &str, game: Option<&Game>) -> Result<Details, String> {
+        let mut url = reqwest::Url::parse(
+            "https://store-content.ak.epicgames.com/api/en-US/content/products/",
+        )
+        .unwrap();
+        url.path_segments_mut().unwrap().pop_if_empty().push(slug);
+        let value: Value = serde_json::from_slice(&self.request(url.as_str(), true)?)
+            .map_err(|e| e.to_string())?;
+        crate::epic::product(&value, slug, page, game)
+    }
+    fn epic(&self, game: &Game) -> Result<Details, String> {
+        let mut local = game
+            .extra
+            .get("epicMetadata")
+            .and_then(|v| crate::epic::catalog(v).ok());
+        if let Ok(remote) = self.epic_product(&crate::epic::slug(&game.name), "home", Some(game)) {
+            if let Some(local) = local.as_mut() {
+                local.fill_missing(&remote);
+            } else {
+                local = Some(remote);
+            }
+        }
+        local.ok_or_else(|| "No verified Epic product; choose its store page manually".into())
     }
     fn gog(&self, game: &Game) -> Result<Details, String> {
         let mut url =
@@ -349,11 +399,25 @@ impl Client {
         if game.store == "Steam" && !game.store_id.is_empty() {
             return self.steam(&game.store_id);
         }
-        let mut primary = if !game.store_url.is_empty() {
-            self.page(&game.store_url).ok()
+        let mut primary = if game.store == "Epic" {
+            if reqwest::Url::parse(&game.store_url)
+                .ok()
+                .as_ref()
+                .and_then(crate::epic::page_slug)
+                .is_some()
+            {
+                self.page(&game.store_url)
+                    .ok()
+                    .or_else(|| self.epic(game).ok())
+            } else {
+                self.epic(game).ok()
+            }
         } else {
             None
         };
+        if primary.is_none() && !game.store_url.is_empty() {
+            primary = self.page(&game.store_url).ok();
+        }
         if primary.is_none() && game.store == "GOG" {
             primary = self.gog(game).ok();
         }
@@ -457,7 +521,15 @@ impl Client {
                 game.cached_landscape = Some(key)
             }
         }
+        let epic_portrait = game
+            .extra
+            .get("automaticPortrait")
+            .and_then(Value::as_str)
+            .unwrap_or("");
         let mut portraits = vec![];
+        if !epic_portrait.is_empty() {
+            portraits.push(epic_portrait.to_owned());
+        }
         if id.parse::<u64>().is_ok() {
             for suffix in ["library_600x900_2x.jpg", "library_600x900.jpg"] {
                 portraits.push(format!(
@@ -466,11 +538,14 @@ impl Client {
             }
         }
         portraits.sort_by_key(|u| {
-            !root
-                .join("Media")
-                .join(hash(&game.id))
-                .join(hash(u) + ".png")
-                .exists()
+            (
+                u != epic_portrait,
+                !root
+                    .join("Media")
+                    .join(hash(&game.id))
+                    .join(hash(u) + ".png")
+                    .exists(),
+            )
         });
         for url in portraits {
             if let Ok(key) = self.cache(&url, root, &game.id, "portrait") {
@@ -478,7 +553,7 @@ impl Client {
                 break;
             }
         }
-        if id.is_empty() && !game.artwork.is_empty() {
+        if game.cached_artwork.is_none() && id.is_empty() && !game.artwork.is_empty() {
             if let Ok(key) = self.cache(&game.artwork, root, &game.id, "any") {
                 game.cached_artwork = Some(key);
             }
@@ -554,6 +629,7 @@ pub fn parse_steam(data: &Value, id: &str) -> Result<Details, String> {
     }
     let v = &item["data"];
     Ok(Details {
+        portrait: String::new(),
         steam_id: id.into(),
         name: v["name"].as_str().unwrap_or("").into(),
         summary: plain(v["short_description"].as_str().unwrap_or("")),
@@ -667,6 +743,35 @@ pub fn parse_html(html: &str, url: &str) -> Result<Details, String> {
 mod tests {
     use super::*;
     #[test]
+    #[ignore = "contacts the official Epic public product service"]
+    fn epic_public_product_smoke() {
+        let client = Client::new().unwrap();
+        for (name, namespace, slug) in [
+            ("Hades", "min", "hades"),
+            ("Control", "calluna", "control"),
+            ("Fortnite", "fn", "fortnite"),
+        ] {
+            let game = Game {
+                name: name.into(),
+                store: "Epic".into(),
+                extra: crate::epic::identifiers(namespace, ""),
+                ..Default::default()
+            };
+            let details = client.epic_product(slug, "home", Some(&game)).unwrap();
+            assert!(!details.summary.is_empty(), "{name}");
+            assert!(!details.developer.is_empty(), "{name}");
+            assert!(!details.portrait.is_empty(), "{name}");
+            assert_eq!(details.source, "Epic Games");
+        }
+        assert_eq!(
+            client
+                .page("https://store.epicgames.com/en-US/p/hades")
+                .unwrap()
+                .name,
+            "Hades"
+        );
+    }
+    #[test]
     fn custom_metadata_survives_refresh_reset_and_serialization() {
         let mut game = Game {
             name: "Original".into(),
@@ -772,6 +877,31 @@ mod tests {
         client.artwork(&mut game, root.path());
         assert_eq!(game.cached_artwork, Some(key));
         assert!(cache_file(root.path(), &game, &game.cached_artwork).is_some());
+    }
+    #[test]
+    fn epic_portrait_is_not_overwritten_by_landscape_fallback() {
+        let root = tempfile::tempdir().unwrap();
+        let mut game = Game {
+            id: "epic:fixture".into(),
+            store: "Epic".into(),
+            artwork: "wide-fixture".into(),
+            extra: [(
+                "automaticPortrait".into(),
+                Value::String("tall-fixture".into()),
+            )]
+            .into(),
+            ..Default::default()
+        };
+        let folder = root.path().join("Media").join(hash(&game.id));
+        fs::create_dir_all(&folder).unwrap();
+        for (url, width, height) in [("wide-fixture", 460, 215), ("tall-fixture", 600, 900)] {
+            image::RgbaImage::new(width, height)
+                .save(folder.join(hash(url) + ".png"))
+                .unwrap();
+        }
+        Client::new().unwrap().artwork(&mut game, root.path());
+        assert_eq!(game.cached_artwork, Some(hash("tall-fixture") + ".png"));
+        assert_eq!(game.cached_landscape, Some(hash("wide-fixture") + ".png"));
     }
     #[test]
     fn publisher_offline() {
