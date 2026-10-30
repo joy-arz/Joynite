@@ -1,0 +1,124 @@
+# Joynite
+
+A native SwiftUI library and launcher in this Joynite fork. The Mac application lives in `macos/`; the original MIT-licensed Windows source remains in `source/`.
+
+## Install
+
+Download the Apple Silicon ZIP from [this fork's releases](https://github.com/joy-arz/Joynite/releases), unzip **Joynite.app**, and move it into Applications. Builds are ad-hoc signed, not Apple notarized. Downloaded copies may require **System Settings → Privacy & Security → Open Anyway**.
+
+On the development Mac, the app is installed in `~/Applications/Joynite.app`. macOS Tahoe on Apple Silicon is tested; the deployment target is macOS 14.
+
+## The carousel
+
+Five cards form a continuously wrapping carousel. The selected card is centered and largest, with its title and description inside. Cards further from the center become smaller. A one-game library displays one card; small multi-game libraries repeat entries to maintain the five-slot loop. Choose a card, use the arrows, swipe/drag horizontally, or scroll a trackpad horizontally.
+
+Steam portrait covers are preferred over wide banners. Portrait covers, horizontal inspection images, and alternate backgrounds have independent offline caches. The full sharp image fits inside its frame; a softened copy fills any remaining space without cutting off the foreground. Movement uses a 0.42-second interruptible spring with four offscreen card buffers, retaining five visible cards. A different game screenshot supplies the backdrop when available. If a provider has no alternate image, the cover or local icon is used instead. Both sidebars start hidden; their header buttons toggle them.
+
+| Keyboard | Action |
+| --- | --- |
+| Left / Right or A / D | Previous / next game, wrapping at both ends |
+| Return | Launch selected game immediately |
+| Shift | Toggle game details |
+| L | Toggle library sidebar |
+| F | Toggle favorite |
+| Escape | Close sidebars |
+| Command-F | Focus search |
+| Command-E | Edit custom metadata and images |
+| Command-N | Add Mac application |
+| Command-R | Scan installed games |
+
+Navigation shortcuts pause while typing, or while a sheet/dialog is open. Return in search and metadata forms does not launch a game. Shift inside a text field retains normal typing behavior.
+
+Controllers supported by Apple's extended Game Controller profile are detected at connection/disconnection. D-pad or left stick browses with hold-to-repeat; shoulders also browse. Bottom face button launches, top face button toggles details, left face button toggles libraries, and right face button closes panels. Right-stick click toggles favorite. Hints switch on actual keyboard/mouse/controller use and use the connected controller's symbol names. Input is handled only while Joynite is active, so it does not intercept game controls. Physical controller compatibility depends on macOS and the device; see validation notes.
+
+## Import and metadata
+
+Every startup scans installed games. **Add / manage → Scan installed games** also discovers Steam ACF/VDF libraries, external Steam libraries, Epic `.item` manifests, Heroic Epic/GOG installed JSON, and native Mac applications. **Add Mac application** adds a game from any disk; **Add games folder** remembers a directory and scans up to five levels deep. Wine-wrapped `.app` games are detected through their prefix directories. Steam inside Wine, CrossOver, and Sikarugir/Wineskin is inventoried separately per prefix, including external Steam libraries. Launch and uninstall reuse that installation’s original Wine runtime and prefix. Kaon-style CrossOver environment settings are preserved; Sikarugir uses its bundled Wine because wrapper launchers may ignore forwarded arguments. Missing runtimes produce a notice rather than routing to another Steam client.
+
+Standard scan roots: `/Applications` and `~/Applications` (game categories, recognized titles, and wrappers), `/Applications/Games`, `/Applications/GOG Games`, `~/Games`, `~/GOG Games`, and `~/Library/Application Support/itch/apps`. Explicit game folders treat all `.app` bundles as candidates. Hidden games can be restored from the Library menu.
+
+Steam metadata uses an app ID or one exact normalized title. Ambiguous matches are left for **Find metadata**, which can select a Steam result or import a Steam/GOG/itch.io/Epic page. GOG catalog search is a fallback. SteamDB is not scraped. Public store endpoints can change or rate-limit requests; errors never discard existing metadata or stop local game launches.
+
+A publisher catalog contains offline descriptions, developers, and genres for Roblox, VALORANT, Genshin Impact, Honkai: Star Rail, Zenless Zone Zero, League of Legends, and Minecraft. Exact aliases automatically match installed applications. **Library → Publisher metadata catalog** can apply one to the selected entry. Official publisher artwork is retrieved when exposed by the page; missing artwork falls back to the local application icon. Adding metadata does not install a game or make unsupported games run on macOS.
+
+## Custom metadata and images
+
+Open game details and choose **Edit metadata and images…**, use the card context menu, or press Command-E. Edit title, developer, release date, comma-separated genres, and description. Choose separate card, inspection, and background images. PNG, JPEG, WebP, and GIF files up to 24 MB are copied into the managed cache; the source files can then be moved without breaking the library. Only the first frame of animated images is used. Oversized dimensions are rejected before decoding.
+
+Overrides are per field and survive automatic refresh. Untouched fields still receive new provider data. **Reset custom text** restores the latest cached automatic values; each **Use automatic** button resets one image role independently. Everything works offline once saved. ZIP backups include the library plus available cached and custom images. Restore verifies the manifest and file hashes before merging; existing game records and edits are kept. Legacy JSON imports remain available.
+
+## Offline retention
+
+Metadata lives in `~/Library/Application Support/Joynite/library.json`. Covers and alternate backgrounds are downloaded, validated, resized to a maximum dimension of 1200 pixels for portrait/inspection images and 1600 pixels for backgrounds/custom images, and saved as PNGs under `Media/<game-id-hash>/`. The library stores their cache keys. Rendering reads local files, so already cached artwork and metadata remain usable offline and across restarts. Remote failures preserve the last successful files. Existing 0.1 records migrate without losing favorites, launch history, or descriptions.
+
+**Hide from library** keeps the record and cache. Missing external disks do not trigger cleanup. An explicit refresh can update metadata; it does not erase valid fields when a response omits them. Use **Library → Back up library and images…** for a portable ZIP. **Restore library backup…** restores available artwork offline; launch paths can still require re-adding on a different computer.
+
+Library saves are atomic and retain the previous version as `library.json.backup`. A corrupt library is preserved and not overwritten. Restore a backup and restart if necessary. Export a library before moving machines; launch paths may need re-adding. No credentials or telemetry server are used.
+
+## Uninstall
+
+Use **Uninstall…** in game details or the card context menu.
+
+- A native `.app` is moved to Trash after confirmation. Data inside its bundle moves with it, including saves embedded in a Wine wrapper. External save files are left alone. The library entry and image cache are removed only when the move succeeds. Restore from Trash if needed.
+- Steam opens `steam://uninstall/ID`; complete or cancel the dialog in Steam.
+- Epic/Heroic open their client; use that client's Uninstall command. These clients do not provide a common supported uninstall URL, so Joynite does not bypass their installation records.
+- For store handoffs, cached metadata stays until a return to Joynite or a scan confirms the game path is gone and its parent is accessible. Disconnected volumes never count as removal. Cancelled or failed operations keep cached metadata.
+
+Running native applications must be quit first. System apps, symlinks, nested application bundles, and Joynite itself are protected from the native Trash action.
+
+## Launch support and limits
+
+Mac applications launch with macOS Launch Services. Steam, Epic, and Heroic installations use their installed client's protocol. Store ownership and DRM still apply. A successful request is recorded as a **launch request**, not proof of reaching a main menu.
+
+This release imports installed games, not entire online account libraries. It does not download games, sync cloud saves, run Windows Playnite plugins/themes, or include a Windows compatibility runtime. Heroic uses the runtime configured there. Individual games still have their own OS, hardware, runtime, and anti-cheat requirements.
+
+## Build and validate
+
+Requires Swift 5.9+ and Apple's macOS SDK from Command Line Tools or Xcode. XCTest is not required.
+
+```sh
+cd macos
+swift run JoyniteValidation
+swift run JoyniteValidation --live
+JOYNITE_OFFLINE=1 swift run JoyniteValidation
+./scripts/build-app.sh --install
+open "$HOME/Applications/Joynite.app"
+```
+
+The build script produces an optimized `.app` and a versioned ZIP in `dist/`. GitHub CI validates core behavior and packages the app. Intel builds can be produced on Intel Macs but are untested.
+
+Development/validation environment variables: `JOYNITE_DATA_DIRECTORY` selects a separate library directory; `JOYNITE_OFFLINE=1` disables metadata and artwork network requests while allowing existing disk-cache hits. These allow isolated offline/uninstall tests without touching real libraries or games.
+
+`Joynite --diagnostics` prints discovered games as JSON without launching games or changing the library. Paths and game names appear in that output; inspect before sharing it. See [VALIDATION.md](VALIDATION.md) for observed checks and remaining hardware/provider limitations.
+
+## Launch at login and support
+
+Settings includes **Launch Joynite when I sign in**, off by default. Windows uses the current user’s startup registration, Linux uses an XDG autostart entry (AppImages retain their original executable path), and macOS uses its login/startup mechanism. No administrator service is installed. Moving the app after enabling startup may require disabling and re-enabling the setting.
+
+The orange Ko-fi cup in the bottom-right footer opens https://ko-fi.com/joyarz in the default browser. Opening Joynite does not load a donation widget or make a support-page network request.
+
+Joynite migrates earlier libraries without deleting their originals. Legacy data directory names and environment-variable aliases remain only for migration/backward compatibility. Original upstream code and licensing still refer to Playnite.
+
+## Quiet software updates
+
+A background check runs after startup without blocking your library. A new official release appears in a small top-right notice. Update now downloads and verifies the signed package before installation. Update later snoozes that version for 24 hours. Don’t remind me again skips only that version; newer releases can notify again. Offline failures stay silent. Settings includes a manual check. Libraries, cached artwork, and game installations are not replaced by app updates. Version 0.4 needs one manual install of 0.5 to gain this feature. See ../updates/README.md and ../IMPROVEMENTS.md.
+
+## Search
+
+Press **Space** (or Command-F) to expand search into the center. Matching ignores case and accents and offers the closest titles for misspellings. Enter selects the best result and returns the field to the header; it does not launch the game. Press Enter again to play. Escape cancels. Tab and Shift-Tab do not move focus in the library, while settings/editor forms retain standard navigation. Large-library search runs off the main thread, with stale results discarded.
+
+## Yu-Gi-Oh! project metadata
+
+EDOPro / Project Ignis, YGOPro, legacy YGOPro Percy, YGOPro 2, KoishiPro, YGO Omega and MDPro3 have bundled descriptions, developers, genres, and project links. Recognized application names are included in startup discovery. Use the publisher catalog to attach a chosen entry manually when an installation has a different name. Text is available offline; available project artwork downloads into the same persistent cache. Custom overrides stay in place.
+
+## Startup ranking and local launch counts
+
+At each fresh launch, Joynite ranks visible games by favorite status, then accepted Joynite launch count, then title/ID for ties. Rank 1 starts selected in the center; the visible row is ranks 4, 2, 1, 3, 5. The rest continue in rank order to the right after rank 5, with infinite wraparound. Counts are frozen for ranking while the app stays open so a launch does not reshuffle its neighbors. Favorite and title edits can still update ordering deliberately.
+
+Old records start at zero: no counts are inferred from lastPlayed, Steam playtime or operating-system histories. Successful application/runtime/client handoffs increment the local counter once. Missing paths and rejected launch requests do not count; a later crash does not undo an accepted request. The count is in game details and travels with Joynite library backups. This counts opens, not play duration or verified menu arrivals.
+
+Search keeps one native field mounted through its expansion. Up/Down chooses among suggestions; direct title/genre matches are used before fuzzy fallbacks. Large queries remain off the main thread.
+
+Library backup export/restore runs off the UI thread with progress and cancellation. Restore pauses mutations until its commit completes; cancellation before commit rolls back newly copied artwork and keeps the previous library. **Preview library backup…** verifies a ZIP and shows additions/kept records without applying it. Preview does not guarantee destination write permissions or game-path availability on another computer.
+
+Details also show a bounded local report for launches made by Joynite: accepted request, process exit, or launch error. Application/client handoffs do not prove a game reached its menu. Compatibility runtime logs remain separate under Logs.

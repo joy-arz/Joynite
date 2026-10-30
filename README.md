@@ -1,105 +1,79 @@
+# <img src="branding/preview.png" width="48" alt="Joynite icon"> Joynite
 
-# <img src="https://playnite.link/applogo.png" width="32">  Playnite [![Crowdin](https://badges.crowdin.net/playnite/localized.svg)](https://crowdin.com/project/playnite)
-An open source video game library manager and launcher with support for 3rd party libraries like Steam, Epic, GOG, EA App, Battle.net and [others](https://playnite.link/addons.html). Includes game emulation support, providing one unified interface for your games.
+Your games. One smooth carousel.
 
-Screenshots are available at the [Homepage](http://playnite.link/)
+Joynite is a redesigned, lightweight game library and launcher with a black-and-orange interface, persistent offline metadata, custom artwork, and keyboard/controller navigation. Choose the native SwiftUI edition for macOS or the Rust/system-webview edition for Windows, Linux, and macOS.
 
-*If you find Playnite useful please consider supporting the lead developer [Josef Nemec](https://github.com/JosefNemec) on [Patreon](https://www.patreon.com/playnite).*
+Joynite retains Playnite's original source and license, but the shipped SwiftUI and Rust/webview apps are separate implementations. They do not load Playnite's .NET addons or WPF themes. [Upstream comparison and adapted behavior](docs/UPSTREAM-COMPARISON.md).
 
-Features
----------
+**[Download Joynite](https://github.com/joy-arz/Joynite/releases)** · **[macOS guide](macos/README.md)** · **[Windows/Linux guide](desktop/README.md)** · **[Support on Ko-fi](https://ko-fi.com/joyarz)**
 
-See the [Homepage](http://playnite.link/) for the list of features.
+## Your library, front and center
 
-Download
----------
+![Joynite carousel with Inscryption selected in the center](docs/screenshots/joynite-carousel.png)
 
-Grab the latest installer or portable package from the [download](https://playnite.link/download.html) page. Playnite will automatically notify you about a new version upon release.
+Five cards wrap continuously. The selected game is largest and centered, with its title and description inside the card. Interruptible sliding follows rapid input. Portrait covers and inspection images fit completely over a matching softened fill. Alternate backgrounds cover the full application viewport.
 
-Requirements: Windows 10 or 11
+![Joynite showing Inscryption artwork and saved metadata](docs/screenshots/joynite-inscryption-details.png)
 
-FAQ, Known Issues, user manual
----------
-Can be found [here](https://api.playnite.link/docs/)
+## Features
 
-Questions, issues etc.
----------
-If you find a bug please file an [issue](https://github.com/JosefNemec/Playnite/issues) and if relevant (crashes, broken features) please attach a diagnostics package, which can be created from inside the "About Playnite..." submenu.
+- **Offline first.** Descriptions, developers, genres, dates, favorites, and artwork remain on disk across restarts. Custom text and three independent image overrides survive automatic refresh.
+- **Per-game launch settings (shared edition).** Keep automatic store/Wine routing or configure an application, arguments, working directory or supported client URL. Windows can request administrator permission for that game only. Native GOG primary tasks and Linux XDG/Flatpak game entries are discovered.
+- **Automatic metadata.** Steam, GOG, itch.io, Epic/store-page matching, and bundled publisher metadata for Roblox, VALORANT, Genshin Impact, EDOPro, YGOPro/Percy, YGOPro 2, KoishiPro, YGO Omega, MDPro3, and more. Provider availability varies.
+- **Installed-game discovery.** Steam, Epic/Heroic manifests, native game applications, and Steam inside Wine, CrossOver, and Sikarugir/Wineskin prefixes. Each compatibility installation keeps its original runtime and prefix.
+- **Your most-opened games first.** Startup puts the top five around the center: 4th · 2nd · 1st · 3rd · 5th. Favorites rank first, then successful launches made through Joynite. Remaining games continue in the same ranking; alphabetical ties stay stable. Counts are local and start at zero for older libraries.
+- **Fast search.** Space expands search into the center. Enter selects a case-insensitive, typo-tolerant match and returns to browsing. Up/Down chooses a suggestion; direct matches suppress weak fuzzy alternatives. Tab cannot trap the library in search.
+- **Portable backups.** Export metadata and available cached/custom artwork as a ZIP; restore verifies the manifest and hashes and keeps existing game edits. Backups have progress and cancellation; an optional preview verifies the archive without changing the library.
+- **Direct controls.** Arrow keys or A/D browse. Enter/Return launches immediately. Shift toggles details; L toggles libraries. Both sidebars start hidden. Hints follow the active keyboard or controller.
+- **Quiet updates.** Official GitHub releases are checked in the background. A small top-right notice offers Update now, Update later, or skipping that version. Downloads begin only on request and signatures are verified before installation.
+- **Launch at login.** An optional setting opens Joynite when you sign in on Windows, Linux, or macOS. It is off by default.
+- **Fullscreen window at startup.** Both editions fill the screen when opened. On macOS, Joynite stays on the current desktop instead of creating a separate fullscreen Space. Use Command-Q on macOS or Alt-F4 on Windows/Linux to quit.
+- **Safer uninstall.** Confirmed native application removal uses Trash. Steam and other stores use their original uninstall flow; metadata remains until removal is confirmed. Disconnected disks do not trigger cleanup.
+- **Small implementation.** Native SwiftUI or Rust plus the system webview; no bundled browser or Node runtime. [Measurements and validation limits](AUDIT.md) describe what has actually been checked.
 
-Biggest community around Playnite currently gathers on our [Discord server](https://playnite.link/discord) and [Reddit](https://www.reddit.com/r/playnite/).
+## Settings
 
-Privacy Statement
----------
-Playnite itself doesn't store any user information and you generally don't need to provide any information to import installed games. All game library data is stored locally on your PC.
+![Joynite startup setting](docs/screenshots/joynite-settings.png)
 
-Account connection process depends on how a library plugin is implemented, but is usually done via official login web forms and only the web session cookies or tokens are stored, the same way when you login to those services via the web browser.
+Open **Settings** in the app. On macOS, use **Joynite → Settings…** or Command-comma. The shared desktop edition also has a footer Settings button and Command/Ctrl-comma. Enable **Launch Joynite when I sign in** to opt in; disable it to remove the startup registration. A desktop session must be signed in before the app can open.
 
-Add-ons
----------
-Playnite can be extended with plugins (written in .NET languages), PowerShell scripts and user interface themes.
+Existing libraries from this fork’s previous Playnite-branded releases are copied into the Joynite data directory on first launch. Metadata, cached images, favorites, custom overrides, and history stay intact. Original data remains available as a recovery copy. The native and shared Mac editions keep separate library directories.
 
-See the [extensions portal](https://api.playnite.link/docs/tutorials/index.html) for more information about how to make these addons.
+## Software updates
 
-Translations
----------
+Update checks do not block library scanning or navigation. Offline launches stay quiet. **Update later** snoozes that release for 24 hours; **Don’t remind me again** skips it until a newer version is released. Use **Check for updates…** in Settings to check manually. Updates preserve the library and game installations.
 
-We use Crowdin to manage localization, please join our project if you want to submit translations:
+Version 0.4 users install 0.5 once manually to enable future in-app updates. See [signed update delivery](updates/README.md) and the [post-update review](IMPROVEMENTS.md).
 
-https://crowdin.com/project/playnite
+## Build
 
-Proofreading changes to original English strings can be submitted by creating pull request for [LocSource.xaml](https://github.com/JosefNemec/Playnite/blob/devel/source/Playnite/Localization/LocSource.xaml) file.
+Native macOS:
 
-Code Contributions
----------
-
-Pull requests are generally on pause because majority of code base is being rewritten for Playnite 11. Smaller "safe" changes for P10 might get accepted based on what they and if they come with test coverage. If you plan to work on bigger changes, please discuss it first in related issue or on Discord, thank you.
-
-Please ask in the related issue first before starting implementing something to make sure that nobody else is already working on it. If an issue doesn't exist for your feature/bug fix, create one first.
-
-Regarding code styling, there are only a few major rules:
-
-- private fields and properties should use camelCase (without underscore)
-- all methods (private and public) should use PascalCase
-- use spaces instead of tabs with 4 spaces width
-- add empty line between code block end `}` and additional expression
-- always encapsulate the code body after *if, for, foreach, while* etc. with curly braces:
-
-```csharp
-if (true)
-{
-    DoSomething();
-}
-
-DoSomethingElse();
+```sh
+swift run --package-path macos JoyniteValidation
+macos/scripts/build-app.sh --install
 ```
 
-instead of
+Shared desktop, after installing the [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/):
 
-```csharp
-if (true)
-    DoSomething();
-DoSomethingElse();
+```sh
+cd desktop
+npm ci
+npm test
+npm run tauri -- build
 ```
 
-Branches
----------
-* `master` - default branch representing state of currently released build.
-* `devel` - development branch containing latest changes. All pull requests should be made against `devel` branch.
-* `devel*` - development branches for specific features/versions.
+See the platform guides for compatibility limits. Discovery and metadata do not make a Windows-only game or its anti-cheat work on another operating system. Mac builds are ad-hoc signed rather than notarized. Original Windows Playnite plugins and themes are not portable to these interfaces.
 
-Roadmap
----------
+## Support Joynite
 
-Playnite is currently being rewritten from scratch for next major version release 11. The work is being done in private repository until beta release, after which the code will be release in this repository under the same license as current version 10 release. There is no list of planned changes and new features for version 11.
+[<img src="branding/kofi.svg" width="26" alt="Ko-fi cup"> **Support joy-arz on Ko-fi**](https://ko-fi.com/joyarz)
 
-Development
----------
+If Joynite makes your library easier to use, you can support its development. The same orange Ko-fi cup is available in the app’s bottom-right corner.
 
-See the [wiki](https://github.com/JosefNemec/Playnite/wiki/Building) for info about building and setting up the development environment.
+## Contributor
 
-Others
----------
+**[joy-arz](https://github.com/joy-arz)** — Joynite maintainer and contributor.
 
-This program uses free code signing provided by [SignPath.io](https://signpath.io?utm_source=foundation&utm_medium=github&utm_campaign=playnite), and a free code signing certificate by the [SignPath Foundation](https://signpath.org?utm_source=foundation&utm_medium=github&utm_campaign=playnite)
-
-[![Capture](https://user-images.githubusercontent.com/3874087/128503363-9c39f8cd-9900-4a8b-83f2-81359d4fc731.PNG)](https://about.signpath.io?utm_source=foundation&utm_medium=github&utm_campaign=playnite)
+Joynite builds on [Playnite](https://github.com/JosefNemec/Playnite) by Josef Nemec and its original contributors. Their source history and MIT license notices remain intact. The original project’s README is preserved in [docs/UPSTREAM-README.md](docs/UPSTREAM-README.md).

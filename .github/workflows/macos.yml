@@ -1,0 +1,36 @@
+name: macOS native build
+on:
+  push:
+    paths: ['branding/**', 'macos/**', 'desktop/**', 'scripts/**', 'updates/**', '.github/workflows/**']
+  pull_request:
+    paths: ['branding/**', 'macos/**', 'desktop/**', 'scripts/**', 'updates/**', '.github/workflows/**']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: macos-15
+    env:
+      JOYNITE_SPARKLE_PRIVATE_KEY: ${{ secrets.JOYNITE_SPARKLE_PRIVATE_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate release configuration and feed generation
+        run: |
+          python scripts/sync-publisher-catalog.py
+          python scripts/validate-release-config.py
+          python scripts/test-update-feeds.py
+      - name: Validate core behavior
+        run: |
+          swift build --package-path macos --product JoyniteValidation
+          VALIDATION_BIN="$(swift build --package-path macos --show-bin-path)/JoyniteValidation"
+          codesign --force --sign - "$VALIDATION_BIN"
+          "$VALIDATION_BIN"
+      - name: Build signed application bundle
+        run: macos/scripts/build-app.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Joynite
+          path: |
+            macos/dist/Joynite-*.zip
+            macos/dist/Joynite-*.signature.json

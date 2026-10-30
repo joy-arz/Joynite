@@ -1,0 +1,104 @@
+name: Cross-platform carousel
+on:
+  push:
+    paths: ['branding/**', 'macos/**', 'desktop/**', 'scripts/**', 'updates/**', '.github/workflows/**']
+  pull_request:
+    paths: ['branding/**', 'macos/**', 'desktop/**', 'scripts/**', 'updates/**', '.github/workflows/**']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  desktop:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            bundles: nsis
+            name: Windows
+          - os: ubuntu-24.04
+            bundles: deb,appimage
+            name: Linux
+          - os: macos-15
+            bundles: app
+            name: macOS-shared
+    runs-on: ${{ matrix.os }}
+    env:
+      CARGO_TERM_COLOR: always
+      APPIMAGE_EXTRACT_AND_RUN: '1'
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.JOYNITE_TAURI_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ''
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate release configuration and feed generation
+        run: |
+          python scripts/sync-publisher-catalog.py
+          python scripts/validate-release-config.py
+          python scripts/test-update-feeds.py
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/src-tauri -> target
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev librsvg2-dev patchelf libayatana-appindicator3-dev
+      - name: Install frontend dependencies
+        working-directory: desktop
+        run: npm ci
+      - name: Validate navigation and input logic
+        working-directory: desktop
+        run: npm test
+      - name: Build local frontend
+        working-directory: desktop
+        run: npm run build
+      - name: Validate native backend
+        working-directory: desktop
+        run: cargo test --manifest-path src-tauri/Cargo.toml --locked
+      - name: Build platform application
+        working-directory: desktop
+        shell: bash
+        run: |
+          python -c 'import pathlib,shutil;p=pathlib.Path("src-tauri/target/release/bundle");shutil.rmtree(p) if p.is_dir() else None'
+          if [ -n "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+            npm run tauri -- build --bundles ${{ matrix.bundles }}
+          else
+            npm run tauri -- build --bundles ${{ matrix.bundles }} --config '{"bundle":{"createUpdaterArtifacts":false}}'
+          fi
+      - name: Sign Debian update package
+        if: runner.os == 'Linux' && env.TAURI_SIGNING_PRIVATE_KEY != ''
+        working-directory: desktop
+        run: |
+          for package in src-tauri/target/release/bundle/deb/*.deb; do
+            npm run tauri -- signer sign "$package"
+          done
+      - name: Archive macOS app
+        if: runner.os == 'macOS'
+        run: |
+          codesign --force --deep --sign - 'desktop/src-tauri/target/release/bundle/macos/Joynite.app'
+          codesign --verify --deep --strict 'desktop/src-tauri/target/release/bundle/macos/Joynite.app'
+          tar -czf 'desktop/src-tauri/target/release/bundle/macos/Joynite.app.tar.gz' -C desktop/src-tauri/target/release/bundle/macos Joynite.app
+          if [ -n "$TAURI_SIGNING_PRIVATE_KEY" ]; then npm run tauri --prefix desktop -- signer sign "$PWD/desktop/src-tauri/target/release/bundle/macos/Joynite.app.tar.gz"; fi
+          python3 -c 'import platform,json;open("desktop/updater-platform.json","w").write(json.dumps({"platform":"darwin-"+("aarch64" if platform.machine()=="arm64" else "x86_64")}))'
+          ditto -c -k --sequesterRsrc --keepParent 'desktop/src-tauri/target/release/bundle/macos/Joynite.app'  'desktop/JoyniteDesktop-macOS.zip'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: JoyniteDesktop-${{ matrix.name }}
+          if-no-files-found: error
+          path: |
+            desktop/src-tauri/target/release/bundle/nsis/*-setup.exe
+            desktop/src-tauri/target/release/bundle/nsis/*.sig
+            desktop/src-tauri/target/release/bundle/deb/*.deb
+            desktop/src-tauri/target/release/bundle/deb/*.sig
+            desktop/src-tauri/target/release/bundle/appimage/*.AppImage
+            desktop/src-tauri/target/release/bundle/appimage/*.sig
+            desktop/src-tauri/target/release/bundle/macos/*.tar.gz*
+            desktop/JoyniteDesktop-macOS.zip
+            desktop/updater-platform.json
