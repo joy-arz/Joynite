@@ -28,6 +28,7 @@ struct JoyniteApplication: App {
                     await model.startup()
                 }
         }.defaultSize(width: 1440, height: 900)
+            .windowStyle(.hiddenTitleBar)
             .commands {
                 CommandGroup(replacing: .newItem) {
                     Button("Add game…", action: model.addApplication).keyboardShortcut("n")
