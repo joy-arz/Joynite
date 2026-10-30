@@ -21,6 +21,8 @@ struct JoyniteApplication: App {
     var body: some Scene {
         WindowGroup("Joynite") {
             LibraryView().environmentObject(model).environmentObject(updater).frame(minWidth: 980, minHeight: 660)
+                .background(StartupWindowLayout())
+                .ignoresSafeArea()
                 .preferredColorScheme(.dark)
                 .task {
                     await model.startup()
@@ -49,6 +51,33 @@ struct JoyniteApplication: App {
                 }
             }
         Settings { JoyniteSettingsView().environmentObject(updater) }
+    }
+}
+private struct StartupWindowLayout: NSViewRepresentable {
+    func makeNSView(context: Context) -> WindowAnchor { WindowAnchor() }
+    func updateNSView(_ nsView: WindowAnchor, context: Context) {}
+
+    final class WindowAnchor: NSView {
+        private weak var configuredWindow: NSWindow?
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            guard let window, configuredWindow !== window else { return }
+            configuredWindow = window
+            window.titleVisibility = .hidden
+            window.titlebarAppearsTransparent = true
+            window.styleMask.insert(.fullSizeContentView)
+            window.isMovableByWindowBackground = false
+            window.hasShadow = false
+            NSApp.presentationOptions.formUnion([.autoHideDock, .autoHideMenuBar])
+            for button in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] {
+                window.standardWindowButton(button)?.isHidden = true
+            }
+            DispatchQueue.main.async { [weak window] in
+                guard let window, let screen = window.screen ?? NSScreen.main else { return }
+                window.setFrame(screen.frame, display: true)
+            }
+        }
     }
 }
 enum Palette {

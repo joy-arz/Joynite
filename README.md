@@ -28,6 +28,7 @@ Five cards wrap continuously. The selected game is largest and centered, with it
 - **Direct controls.** Arrow keys or A/D browse. Enter/Return launches immediately. Shift toggles details; L toggles libraries. Both sidebars start hidden. Hints follow the active keyboard or controller.
 - **Quiet updates.** Official GitHub releases are checked in the background. A small top-right notice offers Update now, Update later, or skipping that version. Downloads begin only on request and signatures are verified before installation.
 - **Launch at login.** An optional setting opens Joynite when you sign in on Windows, Linux, or macOS. It is off by default.
+- **Fullscreen window at startup.** Both editions fill the screen when opened. On macOS, Joynite stays on the current desktop instead of creating a separate fullscreen Space. Use Command-Q on macOS or Alt-F4 on Windows/Linux to quit.
 - **Safer uninstall.** Confirmed native application removal uses Trash. Steam and other stores use their original uninstall flow; metadata remains until removal is confirmed. Disconnected disks do not trigger cleanup.
 - **Small implementation.** Native SwiftUI or Rust plus the system webview; no bundled browser or Node runtime. [Measurements and validation limits](AUDIT.md) describe what has actually been checked.
 

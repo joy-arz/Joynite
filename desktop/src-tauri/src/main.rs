@@ -475,6 +475,10 @@ fn main() {
                 .build(),
         )
         .setup(|app| {
+            if let Some(window) = app.get_webview_window("main") {
+                window.set_simple_fullscreen(true)?;
+                window.show()?;
+            }
             let mut store = Store::open();
             let media = store.root.join("Media");
             if let Err(error) = std::fs::create_dir_all(&media) {
