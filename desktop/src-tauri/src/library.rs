@@ -240,6 +240,7 @@ impl Store {
                     current.store = found.store.clone();
                     current.store_id = found.store_id.clone();
                 }
+                crate::epic::merge_discovery(current, &found);
                 current.launch_target = found.launch_target;
                 current.install_path = found.install_path;
                 current.compatibility = found.compatibility;

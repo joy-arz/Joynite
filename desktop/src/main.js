@@ -10,6 +10,8 @@ import {
   direction,
 } from "./model.mjs";
 import "./style.css";
+import { Backdrop } from "./backdrop.mjs";
+import { CarouselMotion, cardGeometry } from "./carousel-motion.mjs";
 import logo from "./logo.svg";
 import kofi from "./kofi.svg";
 import { mergeLibraryPatch } from "./library-patch.mjs";
@@ -30,7 +32,7 @@ $("#app").innerHTML = `
 <aside id="library-panel" hidden><div class="panel-heading"><h2>Libraries</h2><button id="library-close" aria-label="Close libraries">×</button></div><nav id="filters"></nav><div class="panel-bottom"><button id="restore">Restore hidden games</button><button id="help">Help and notices</button></div></aside>
 <aside id="details" hidden><div class="panel-heading"><h2>Game details</h2><button id="details-close" aria-label="Close details">×</button></div><div id="detail-content"></div></aside>
 <dialog id="actions"><div class="dialog-heading"><h2>Your library</h2><button data-close aria-label="Close">×</button></div><div class="action-grid"><button id="add-game">Add game application</button><button id="add-folder">Add games / Wine-prefix folder</button><button id="scan">Scan installed games</button><button id="refresh">Refresh metadata</button><button id="edit-launch">Launch settings</button><button id="edit-custom">Edit selected metadata / images</button><button id="publishers">Publisher metadata catalog</button><button id="preview-backup">Preview backup</button><button id="import">Restore library backup</button><button id="export">Back up library and images</button><button id="action-settings">Settings</button><button id="action-help">Help and notices</button></div></dialog>
-<dialog id="metadata"><div class="dialog-heading"><h2>Find metadata</h2><button data-close aria-label="Close">×</button></div><p id="match-for"></p><form id="search-form"><input id="metadata-query" placeholder="Game title" aria-label="Game title"><button>Search Steam</button></form><div id="matches"></div><form id="page-form"><input id="metadata-page" placeholder="HTTPS Steam, GOG, itch.io or publisher page" aria-label="Store page"><button>Fetch page</button></form></dialog>
+<dialog id="metadata"><div class="dialog-heading"><h2>Find metadata</h2><button data-close aria-label="Close">×</button></div><p id="match-for"></p><form id="search-form"><input id="metadata-query" placeholder="Game title" aria-label="Game title"><button>Search Steam</button></form><div id="matches"></div><form id="page-form"><input id="metadata-page" placeholder="HTTPS Steam, Epic, GOG, itch.io or publisher page" aria-label="Store page"><button>Fetch page</button></form></dialog>
 <dialog id="publisher-list"><div class="dialog-heading"><h2>Beyond the stores</h2><button data-close aria-label="Close">×</button></div><p>Bundled metadata does not change a game's platform compatibility.</p><div id="publisher-items"></div></dialog>
 <dialog id="help-dialog"><div class="dialog-heading"><h2>Library help</h2><button data-close aria-label="Close">×</button></div><div id="help-content"></div></dialog>
 <dialog id="custom-editor"><div class="dialog-heading"><h2>Custom metadata & images</h2><button data-close aria-label="Close">×</button></div><p>Saved locally. Automatic refresh preserves your overrides. Images are copied into the offline cache.</p><form id="custom-form" class="custom-form"><label>Title<input id="custom-name" required maxlength="50000"></label><label>Developer<input id="custom-developer" maxlength="50000"></label><label>Release date<input id="custom-releaseDate" maxlength="50000"></label><label>Genres, separated by commas<input id="custom-genres" maxlength="50000"></label><label>Description<textarea id="custom-summary" maxlength="50000"></textarea></label><button id="custom-reset-text" type="button">Restore automatic text</button><div id="custom-images"></div><div class="custom-footer"><button id="custom-cancel" type="button">Cancel</button><button class="primary" type="submit">Save offline</button></div></form></dialog>
@@ -43,8 +45,8 @@ let data = { games: [], folders: [], notices: [], platform: "" },
   position = 0,
   filter = "All games",
   query = "",
-  frame = 0,
-  previousPosition = 0;
+  frame = 0;
+const motion = new CarouselMotion();
 const cards = new Map();
 const startupCounts = new Map();
 let searchExpanded = false,
@@ -63,7 +65,6 @@ searchWorker.onmessage = ({ data: result }) => {
   const byID = new Map(data.games.map((g) => [g.id, g]));
   visible = result.ids.map((id) => byID.get(id)).filter(Boolean);
   position = 0;
-  previousPosition = 0;
   cards.forEach((c) => c.remove());
   cards.clear();
   schedule();
@@ -77,8 +78,6 @@ let busy = false,
   hydrateQueued = false,
   hydrateQueuedAll = false,
   bgTimer = 0,
-  bgIndex = 0,
-  lastBg = "",
   matchID = null,
   controllerFrame = 0,
   lastPadTime = 0,
@@ -98,7 +97,8 @@ searchWorker.onerror = () => {
   searchResolve?.();
   searchResolve = null;
 };
-const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+const motionPreference = matchMedia("(prefers-reduced-motion: reduce)");
+motionPreference.addEventListener("change", schedule);
 const selected = () => visible[wrap(position, visible.length)] ?? null;
 const status = (text) => {
   $("#status").textContent = text;
@@ -171,7 +171,6 @@ function changeFilter() {
   searchResolve = null;
   visible = filterGames(data.games, filter, query, startupCounts);
   position = 0;
-  previousPosition = 0;
   cards.forEach((c) => c.remove());
   cards.clear();
   $("#filter-label").textContent = filter;
@@ -197,18 +196,7 @@ function makeCard() {
     '<img class="image-fill" decoding="async" draggable="false"><img class="cover" decoding="async" draggable="false"><div class="card-shade"></div><div class="card-body"><div class="badge-row"><span class="badge"></span><span class="heart"></span></div><div class="card-info"><h2></h2><p class="developer"></p><p class="summary"></p><div class="ready">▶ <span>Ready to play</span><span>↵</span></div></div></div>';
   return card;
 }
-function transform(offset, width) {
-  const d = Math.abs(offset),
-    scale = d === 0 ? 1 : d === 1 ? 0.78 : d === 2 ? 0.59 : 0.45,
-    x =
-      d === 0
-        ? 0
-        : Math.sign(offset) *
-          width *
-          (d === 1 ? 0.8 : d === 2 ? 1.37 : 1.85 + (d - 3) * 0.45);
-  return `translate3d(calc(-50% + ${x}px),-50%,0) scale(${scale})`;
-}
-function render() {
+function render(time) {
   frame = 0;
   const stage = $("#stage");
   const width = Math.max(
@@ -219,7 +207,9 @@ function render() {
       ((stage.clientHeight - 28) * 2) / 3,
     ),
   );
-  const list = slots(position, visible),
+  if (!cards.size) motion.snap(position);
+  const moving = motion.advance(position, time, motionPreference.matches);
+  const list = slots(Math.round(motion.position), visible),
     wanted = new Set(list.map((s) => s.key));
   for (const [key, node] of cards) {
     if (!wanted.has(key)) {
@@ -228,7 +218,9 @@ function render() {
     }
   }
   for (const slot of list) {
-    const { game, offset, key } = slot;
+    const { game, key } = slot;
+    const offset = key - position;
+    const visualOffset = key - motion.position;
     let card = cards.get(key),
       fresh = !card;
     if (fresh) {
@@ -282,26 +274,14 @@ function render() {
     );
     card.style.width = `${width}px`;
     card.style.height = `${width * 1.5}px`;
-    card.style.zIndex = String(6 - Math.abs(offset));
-    card.style.opacity =
-      Math.abs(offset) > 2
-        ? "0"
-        : offset === 0
-          ? "1"
-          : Math.abs(offset) === 1
-            ? ".84"
-            : ".54";
+    const geometry = cardGeometry(visualOffset, width);
+    card.style.opacity = String(geometry.opacity);
+    card.style.transform = geometry.transform;
+    card.style.zIndex = String(6 - Math.round(Math.abs(visualOffset)));
     card.style.pointerEvents = Math.abs(offset) > 2 ? "none" : "auto";
     card.setAttribute("aria-hidden", Math.abs(offset) > 2 ? "true" : "false");
-    if (fresh) {
-      card.style.transition = "none";
-      requestAnimationFrame(() => {
-        card.style.transition = "";
-      });
-    }
-    card.style.transform = transform(offset, width);
   }
-  previousPosition = position;
+  if (moving) frame = requestAnimationFrame(render);
   const game = selected();
   $("#empty").hidden = !!game;
   $("#position").textContent = game
@@ -311,38 +291,20 @@ function render() {
   $("#offline").textContent = imageRole(game || {}, "portrait")
     ? "◉ Saved offline"
     : "";
-  $("#announcement").textContent = game?.name || "No games";
+  const announcement = game?.name || "No games";
+  if ($("#announcement").textContent !== announcement)
+    $("#announcement").textContent = announcement;
   renderHints();
 }
-async function updateBackground() {
-  const game = selected(),
-    asset = localImage(imageRole(game || {}, "background"));
-  if (asset === lastBg) return;
-  lastBg = asset;
-  const next = $(`#bg${1 - bgIndex}`),
-    old = $(`#bg${bgIndex}`);
-  if (!asset) {
-    old.classList.remove("shown");
-    $(`#fill${bgIndex}`).classList.remove("shown");
-    return;
-  }
-  const nextFill = $(`#fill${1 - bgIndex}`),
-    oldFill = $(`#fill${bgIndex}`),
-    fillAsset = localImage(game.images?.backgroundFill);
-  nextFill.hidden = !fillAsset;
-  if (fillAsset) nextFill.src = fillAsset;
-  next.src = asset;
-  try {
-    await next.decode();
-  } catch {
-    return;
-  }
-  if (asset !== lastBg) return;
-  next.classList.add("shown");
-  nextFill.classList.add("shown");
-  old.classList.remove("shown");
-  oldFill.classList.remove("shown");
-  bgIndex = 1 - bgIndex;
+const backdrop = new Backdrop([0, 1].map(index => ({
+  image: $(`#bg${index}`), fill: $(`#fill${index}`),
+})));
+function updateBackground() {
+  const game = selected();
+  return backdrop.show(
+    localImage(imageRole(game || {}, "background")),
+    localImage(game?.images?.backgroundFill),
+  );
 }
 function renderFilters() {
   const nav = $("#filters");
