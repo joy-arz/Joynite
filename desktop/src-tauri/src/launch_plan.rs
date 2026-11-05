@@ -366,3 +366,68 @@ mod windows_os_argument_tests {
         }
     }
 }
+
+#[derive(Default)]
+pub struct LaunchGate {
+    requests: std::sync::Mutex<std::collections::HashMap<String, Option<std::time::Instant>>>,
+}
+pub struct LaunchRequest<'a> {
+    gate: &'a LaunchGate,
+    id: String,
+    accepted: bool,
+}
+impl LaunchGate {
+    pub fn begin(&self, id: &str) -> Result<LaunchRequest<'_>, String> {
+        let mut requests = self.requests.lock().map_err(|e| e.to_string())?;
+        requests.retain(|_, finished| finished.is_none_or(|time| time.elapsed().as_secs() < 2));
+        if requests.contains_key(id) {
+            return Err(
+                "A launch request for this game is already being handed off. Please wait a moment."
+                    .into(),
+            );
+        }
+        requests.insert(id.into(), None);
+        Ok(LaunchRequest {
+            gate: self,
+            id: id.into(),
+            accepted: false,
+        })
+    }
+}
+impl LaunchRequest<'_> {
+    pub fn accept(&mut self) {
+        self.accepted = true;
+    }
+}
+impl Drop for LaunchRequest<'_> {
+    fn drop(&mut self) {
+        if let Ok(mut requests) = self.gate.requests.lock() {
+            if self.accepted {
+                requests.insert(self.id.clone(), Some(std::time::Instant::now()));
+            } else {
+                requests.remove(&self.id);
+            }
+        }
+    }
+}
+#[cfg(test)]
+mod launch_gate_tests {
+    use super::*;
+    #[test]
+    fn pending_launches_are_exclusive_and_failed_requests_retry() {
+        let gate = LaunchGate::default();
+        let first = gate.begin("one").unwrap();
+        assert!(gate.begin("one").is_err());
+        assert!(gate.begin("other").is_ok());
+        drop(first);
+        let mut retry = gate.begin("one").unwrap();
+        retry.accept();
+        drop(retry);
+        assert!(gate.begin("one").is_err());
+        gate.requests.lock().unwrap().insert(
+            "one".into(),
+            Some(std::time::Instant::now() - std::time::Duration::from_secs(3)),
+        );
+        assert!(gate.begin("one").is_ok());
+    }
+}

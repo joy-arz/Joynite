@@ -29,7 +29,7 @@ async fn get_library(state: State<'_>) -> Result<Snapshot, String> {
 async fn scan_games(state: State<'_>) -> Result<Snapshot, String> {
     let state = state.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
-        state.store.lock().map_err(|e| e.to_string())?.scan()?;
+        state.scan()?;
         state.snapshot()
     })
     .await
@@ -59,6 +59,7 @@ fn cancel_metadata(state: State<'_>) {
 async fn launch_game(state: State<'_>, id: String) -> Result<Snapshot, String> {
     let state = state.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
+        let mut request = state.launches.begin(&id)?;
         let (game, root) = {
             let store = state.store.lock().map_err(|e| e.to_string())?;
             store.ensure_writable()?;
@@ -68,6 +69,7 @@ async fn launch_game(state: State<'_>, id: String) -> Result<Snapshot, String> {
             library::record_failed_launch(&game, &root, &error);
             return Err(error);
         }
+        request.accept();
         let mut store = state.store.lock().map_err(|e| e.to_string())?;
         store.record_launch(&id)?;
         Ok(store.snapshot())
@@ -134,14 +136,17 @@ async fn add_folder(state: State<'_>, path: String) -> Result<Snapshot, String> 
     }
     let state = state.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
-        let mut store = state.store.lock().map_err(|e| e.to_string())?;
-        store.ensure_writable()?;
-        let path = path.to_string_lossy().into_owned();
-        if !store.library.folders.contains(&path) {
-            store.library.folders.push(path)
+        {
+            let mut store = state.store.lock().map_err(|e| e.to_string())?;
+            let mut next = store.library.clone();
+            let path = path.to_string_lossy().into_owned();
+            if !next.folders.contains(&path) {
+                next.folders.push(path);
+                store.commit(next)?;
+            }
         }
-        store.scan()?;
-        Ok(store.snapshot())
+        state.scan()?;
+        state.snapshot()
     })
     .await
     .map_err(|e| e.to_string())?
@@ -492,6 +497,7 @@ fn main() {
                 backup: backup::Control::default(),
                 store: Mutex::new(store),
                 cancel: AtomicBool::new(false),
+                launches: Default::default(),
             }));
             Ok(())
         })

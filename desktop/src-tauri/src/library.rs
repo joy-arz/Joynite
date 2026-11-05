@@ -25,6 +25,7 @@ pub struct AppState {
     pub backup: crate::backup::Control,
     pub store: Mutex<Store>,
     pub cancel: AtomicBool,
+    pub launches: crate::launch_plan::LaunchGate,
 }
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -120,6 +121,13 @@ impl Store {
             return Err(error.clone());
         }
         save_library(&self.root, &self.library)?;
+        self.revision += 1;
+        Ok(())
+    }
+    pub fn commit(&mut self, next: Library) -> Result<(), String> {
+        self.ensure_writable()?;
+        save_library(&self.root, &next)?;
+        self.library = next;
         self.revision += 1;
         Ok(())
     }
@@ -220,13 +228,11 @@ impl Store {
             .cloned()
             .ok_or("Game no longer exists".into())
     }
-    pub fn scan(&mut self) -> Result<(), String> {
+    pub fn merge_scan(&mut self, result: discovery::Scan) -> Result<(), String> {
         self.ensure_writable()?;
-        let home = dirs::home_dir().ok_or("Home directory is unavailable")?;
-        let result = discovery::scan(&home, &self.library.folders);
-        self.notices = result.warnings;
+        let mut next = self.library.clone();
         for found in result.games {
-            if let Some(current) = self.library.games.iter_mut().find(|g| {
+            if let Some(current) = next.games.iter_mut().find(|g| {
                 g.id == found.id
                     || (found.store == "GOG"
                         && ["Mac", "Local", "GOG"].contains(&g.store.as_str())
@@ -249,23 +255,24 @@ impl Store {
                         .extra
                         .insert("defaultLaunchAction".into(), action.clone());
                 }
-            } else if !self.library.games.iter().any(|g| {
+            } else if !next.games.iter().any(|g| {
                 !g.install_path.is_empty()
                     && g.install_path == found.install_path
                     && g.launch_kind == found.launch_kind
             }) {
-                self.library.games.push(found)
+                next.games.push(found)
             }
         }
-        let removed: Vec<_> = self
-            .library
+        let removed: Vec<_> = next
             .games
             .iter()
             .filter(|g| confirmed_missing(g))
             .map(|g| g.id.clone())
             .collect();
+        next.games.retain(|g| !removed.contains(&g.id));
+        self.commit(next)?;
+        self.notices = result.warnings;
         for id in removed {
-            self.library.games.retain(|g| g.id != id);
             let folder = self.root.join("Media").join(hash(&id));
             if folder.exists() {
                 if let Err(e) = fs::remove_dir_all(folder) {
@@ -273,7 +280,7 @@ impl Store {
                 }
             }
         }
-        self.save()
+        Ok(())
     }
 }
 fn migrate_library(root: &Path, sources: &[PathBuf]) -> std::io::Result<()> {
@@ -667,12 +674,21 @@ pub fn uninstall(store: &mut Store, id: &str) -> Result<(), String> {
     let game = store.game(id)?;
     let plan = uninstall_plan(&game)?;
     if plan.method == "trash" {
+        let mut pending = store.library.clone();
+        pending
+            .games
+            .iter_mut()
+            .find(|g| g.id == id)
+            .ok_or("Game no longer exists")?
+            .pending_uninstall = Some(true);
+        store.commit(pending)?;
         trash::delete(&game.launch_target).map_err(|e| e.to_string())?;
         if Path::new(&game.launch_target).exists() {
             return Err("Application is still present; metadata retained".into());
         }
-        store.library.games.retain(|g| g.id != id);
-        store.save()?;
+        let mut next = store.library.clone();
+        next.games.retain(|g| g.id != id);
+        store.commit(next)?;
         let folder = store.root.join("Media").join(hash(id));
         if folder.exists() {
             fs::remove_dir_all(folder).map_err(|e| e.to_string())?
@@ -762,6 +778,19 @@ pub struct LibraryPatch {
     pub revision: u64,
 }
 impl AppState {
+    pub fn scan(&self) -> Result<(), String> {
+        let folders = {
+            let store = self.store.lock().map_err(|e| e.to_string())?;
+            store.ensure_writable()?;
+            store.library.folders.clone()
+        };
+        let home = dirs::home_dir().ok_or("Home directory is unavailable")?;
+        let result = discovery::scan(&home, &folders);
+        self.store
+            .lock()
+            .map_err(|e| e.to_string())?
+            .merge_scan(result)
+    }
     pub fn snapshot(&self) -> Result<Snapshot, String> {
         Ok(self.store.lock().map_err(|e| e.to_string())?.snapshot())
     }
@@ -858,6 +887,77 @@ mod tests {
             serde_json::from_slice(&fs::read(t.path().join("library.json.backup")).unwrap())
                 .unwrap();
         assert_eq!(backup.games[0].extra["futureField"], 42);
+    }
+    #[test]
+    fn scan_save_failure_keeps_memory_disk_and_offline_artwork() {
+        let t = tempfile::tempdir().unwrap();
+        let game = Game {
+            id: "pending".into(),
+            install_path: t.path().join("missing-game").to_string_lossy().into(),
+            pending_uninstall: Some(true),
+            ..Default::default()
+        };
+        let mut store = Store {
+            library: Library {
+                games: vec![game],
+                ..Default::default()
+            },
+            root: t.path().into(),
+            error: None,
+            notices: vec![],
+            revision: 1,
+        };
+        save_library(t.path(), &store.library).unwrap();
+        let before = fs::read(t.path().join("library.json")).unwrap();
+        let media = t.path().join("Media").join(hash("pending"));
+        fs::create_dir_all(&media).unwrap();
+        fs::write(media.join("custom.png"), b"custom artwork").unwrap();
+        let blocker = t.path().join(format!("library.{}.tmp", std::process::id()));
+        fs::create_dir(&blocker).unwrap();
+        assert!(store.merge_scan(discovery::Scan::default()).is_err());
+        assert_eq!(store.library.games.len(), 1);
+        assert_eq!(store.revision, 1);
+        assert_eq!(fs::read(t.path().join("library.json")).unwrap(), before);
+        assert_eq!(
+            fs::read(media.join("custom.png")).unwrap(),
+            b"custom artwork"
+        );
+        fs::remove_dir(blocker).unwrap();
+        store.merge_scan(discovery::Scan::default()).unwrap();
+        assert!(store.library.games.is_empty());
+        assert!(!media.exists());
+    }
+    #[test]
+    fn discovery_merges_into_latest_user_edits() {
+        let t = tempfile::tempdir().unwrap();
+        let found = Game {
+            id: "game".into(),
+            launch_target: "new-target".into(),
+            ..Default::default()
+        };
+        let mut current = found.clone();
+        current.launch_target = "old-target".into();
+        current.favorite = true;
+        current.launch_count = 8;
+        let mut store = Store {
+            library: Library {
+                games: vec![current],
+                ..Default::default()
+            },
+            root: t.path().into(),
+            error: None,
+            notices: vec![],
+            revision: 1,
+        };
+        store
+            .merge_scan(discovery::Scan {
+                games: vec![found],
+                warnings: vec![],
+            })
+            .unwrap();
+        assert!(store.library.games[0].favorite);
+        assert_eq!(store.library.games[0].launch_count, 8);
+        assert_eq!(store.library.games[0].launch_target, "new-target");
     }
     #[test]
     fn no_cleanup_for_disconnected_volume() {
@@ -998,6 +1098,7 @@ mod launch_and_patch_tests {
         let state = AppState {
             backup: Default::default(),
             cancel: AtomicBool::new(false),
+            launches: Default::default(),
             store: Mutex::new(Store {
                 root: root.path().to_path_buf(),
                 library: Library {

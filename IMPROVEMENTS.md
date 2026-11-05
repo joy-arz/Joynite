@@ -58,3 +58,13 @@ The supplied Windows screenshots establish failures in 0.7.0. The fix requires a
 ## Upstream behavior adapted in 0.8.0
 
 The original Playnite source was compared with the code actually packaged by Joynite. Its GameAction/ProcessStarter, GOG primary-task import, and per-field metadata fallback patterns informed the shared edition's new launch editor, Windows GOG discovery and missing-field provider fallback. Linux uses XDG/Flatpak inventory precedence and GIO activation because upstream has no Linux implementation. Custom actions commit before publishing state and survive rescans/backups without changing local launch counts. The exact inspected upstream commits, implementation mapping and compatibility limits are in docs/UPSTREAM-COMPARISON.md.
+
+## Recovery and responsiveness improvements in 0.9.0
+
+- Standalone-app uninstall records its intent before moving the app to Trash, so interrupted cleanup can be reconciled later. Uninstall reconciliation commits the updated library before deleting cached artwork. Failed commits retain the in-memory record and cached images. The shared standalone-app uninstall also publishes its removal only after a successful save.
+- Both editions guard per-game launch handoffs. Concurrent requests are rejected while a handoff is pending, accepted handoffs have a two-second cooldown, and failed requests can be retried immediately. This guards Joynite requests; it does not infer that a game reached its menu.
+- Shared discovery runs without holding the library mutex, then merges into the latest records so user favorites, metadata and local counts survive the scan. Adding a folder commits the folder first and uses the same scan path.
+- Native Mac metadata falls back from unavailable store pages to a unique exact Steam match, fills missing fields from secondary results, retains custom overrides, and retries incomplete entries after 24 hours. Steam artwork identity is stored independently from installation/store identity. GOG discovery metadata can be found even if Steam search is unavailable.
+- Both artwork caches persist a five-minute cooldown for failed network requests or rejected image aspect ratios. Cached fallback images remain usable during the cooldown and offline.
+
+Regression validation covers failed uninstall saves, cache retention, merging a discovery result after user edits, pending/accepted/failed launch guards, provider failure/partial fallback, custom metadata preservation, and artwork cooldown. Live Windows UAC/gameplay remains a device-validation task. Native Mac launch-editor parity and Developer ID/notarization remain separate work; notarization requires the owner's signing identity.

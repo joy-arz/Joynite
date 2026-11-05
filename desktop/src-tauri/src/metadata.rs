@@ -462,7 +462,28 @@ impl Client {
                 return Ok(key);
             }
         }
-        let bytes = self.request(remote, false)?;
+        let retry = folder.join(format!("retry-{}", hash(&format!("{remote}:{role}"))));
+        if fs::read_to_string(&retry)
+            .ok()
+            .and_then(|v| v.parse::<f64>().ok())
+            .is_some_and(|until| until > now())
+        {
+            return Err("Artwork retry is temporarily paused after an unsuccessful request".into());
+        }
+        let pause_retry = || {
+            if fs::create_dir_all(&folder).is_ok() {
+                let _ = fs::write(&retry, (now() + 300.0).to_string());
+            }
+        };
+        let bytes = match self.request(remote, false) {
+            Ok(bytes) => bytes,
+            Err(error) => {
+                if !error.starts_with("Offline mode:") {
+                    pause_retry();
+                }
+                return Err(error);
+            }
+        };
         let mut reader = image::ImageReader::new(Cursor::new(bytes))
             .with_guessed_format()
             .map_err(|e| e.to_string())?;
@@ -473,6 +494,7 @@ impl Client {
         reader.limits(limits);
         let image = reader.decode().map_err(|e| e.to_string())?;
         if !aspect_fits(image.width(), image.height(), role) {
+            pause_retry();
             return Err(format!("Image does not fit {role} aspect ratio"));
         }
         let size = if role == "portrait" {
@@ -489,6 +511,7 @@ impl Client {
             .save_with_format(&temporary, image::ImageFormat::Png)
             .map_err(|e| e.to_string())?;
         fs::rename(temporary, path).map_err(|e| e.to_string())?;
+        let _ = fs::remove_file(retry);
         Ok(key)
     }
     pub fn artwork(&self, game: &mut Game, root: &Path) {
@@ -770,6 +793,29 @@ mod tests {
                 .name,
             "Hades"
         );
+    }
+    #[test]
+    fn artwork_cooldown_survives_client_recreation_and_keeps_cached_fallbacks() {
+        let root = tempfile::tempdir().unwrap();
+        let remote = "https://artwork.invalid/cover.png";
+        let folder = root.path().join("Media").join(hash("game"));
+        fs::create_dir_all(&folder).unwrap();
+        image::RgbImage::new(4, 4)
+            .save(folder.join(hash(remote) + ".png"))
+            .unwrap();
+        let retry = folder.join(format!("retry-{}", hash(&format!("{remote}:portrait"))));
+        fs::write(retry, (now() + 300.0).to_string()).unwrap();
+        for _ in 0..2 {
+            let client = Client::new().unwrap();
+            assert!(client
+                .cache(remote, root.path(), "game", "portrait")
+                .unwrap_err()
+                .contains("temporarily paused"));
+            assert_eq!(
+                client.cache(remote, root.path(), "game", "any").unwrap(),
+                hash(remote) + ".png"
+            );
+        }
     }
     #[test]
     fn custom_metadata_survives_refresh_reset_and_serialization() {

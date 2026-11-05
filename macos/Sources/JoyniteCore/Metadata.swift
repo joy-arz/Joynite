@@ -12,7 +12,7 @@ public actor MetadataClient {
         guard (ProcessInfo.processInfo.environment["JOYNITE_OFFLINE"] ?? ProcessInfo.processInfo.environment["PLAYNITE_OFFLINE"]) != "1" else { throw LibraryError.invalid("Offline mode: saved metadata remains available.") }
         guard url.scheme == "https", Self.allowedHost(url.host ?? "") else { throw LibraryError.invalid("Use an HTTPS store page or a supported project/publisher page.") }
         var request = URLRequest(url: url, cachePolicy: .returnCacheDataElseLoad, timeoutInterval: 20)
-        request.setValue("Joynite/0.4 (+https://github.com/joy-arz/Joynite)", forHTTPHeaderField: "User-Agent")
+        request.setValue("Joynite (+https://github.com/joy-arz/Joynite)", forHTTPHeaderField: "User-Agent")
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode), let finalURL = http.url, finalURL.scheme == "https", Self.allowedHost(finalURL.host ?? "") else {
             throw LibraryError.invalid("\(url.host ?? "Store") could not provide metadata. Try a Steam match or a different store page.")
@@ -44,7 +44,7 @@ public actor MetadataClient {
     }
     public static func parseSteam(_ data: Data, id: String) throws -> Metadata {
         guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any], let wrapper = root[id] as? [String: Any], wrapper["success"] as? Bool == true, let item = wrapper["data"] as? [String: Any] else { throw LibraryError.invalid("Steam has no public details for app \(id).") }
-        return Metadata(name: item["name"] as? String ?? "", summary: HTML.text(item["short_description"] as? String ?? ""), developer: (item["developers"] as? [String] ?? []).joined(separator: ", "), releaseDate: (item["release_date"] as? [String: Any])?["date"] as? String ?? "", artwork: item["header_image"] as? String ?? "", url: "https://store.steampowered.com/app/\(id)/", source: "Steam", genres: (item["genres"] as? [[String: Any]] ?? []).compactMap { $0["description"] as? String }, background: (item["screenshots"] as? [[String: Any]])?.first?["path_full"] as? String ?? item["background_raw"] as? String ?? "")
+        return Metadata(name: item["name"] as? String ?? "", summary: HTML.text(item["short_description"] as? String ?? ""), developer: (item["developers"] as? [String] ?? []).joined(separator: ", "), releaseDate: (item["release_date"] as? [String: Any])?["date"] as? String ?? "", artwork: item["header_image"] as? String ?? "", url: "https://store.steampowered.com/app/\(id)/", source: "Steam", genres: (item["genres"] as? [[String: Any]] ?? []).compactMap { $0["description"] as? String }, background: (item["screenshots"] as? [[String: Any]])?.first?["path_full"] as? String ?? item["background_raw"] as? String ?? "", steamID: id)
     }
     public func page(_ value: String) async throws -> Metadata {
         guard let url = URL(string: value.trimmingCharacters(in: .whitespacesAndNewlines)), url.scheme == "https", let host = url.host, Self.allowedHost(host) else { throw LibraryError.invalid("Enter an HTTPS Steam, GOG, Epic Games, or itch.io store page.") }
@@ -57,29 +57,45 @@ public actor MetadataClient {
     public func publisher(_ entry: PublisherGame) async -> Metadata {
         var details = entry.metadata
         if let remote = try? await page(details.url) {
-            if details.artwork.isEmpty && !remote.artwork.isEmpty { details.artwork = remote.artwork }
-            if details.background.isEmpty && !remote.background.isEmpty { details.background = remote.background }
+            details.fillMissing(from: remote)
         }
         return details
+    }
+    public nonisolated static func needsMetadata(_ game: Game, now: Date = Date()) -> Bool {
+        guard let updated = game.metadataUpdated else { return true }
+        let incomplete = game.summary.isEmpty || game.developer.isEmpty || game.genres.isEmpty || game.artwork.isEmpty
+            || (PublisherCatalog.match(game.name) == nil && game.releaseDate.isEmpty)
+        return incomplete && (updated > now || now.timeIntervalSince(updated) >= 86400)
     }
     public func automatic(_ game: Game) async throws -> Metadata {
         if let entry = PublisherCatalog.match(game.name) { return await publisher(entry) }
         if game.store == .steam, !game.storeID.isEmpty { return try await steam(game.storeID) }
-        if !game.storeURL.isEmpty { return try await page(game.storeURL) }
-        let matches = try await search(game.name)
-        let exact = matches.filter { Game.normalized($0.name) == Game.normalized(game.name) }
-        if exact.count == 1 { return try await steam(exact[0].id) }
-        if game.store == .gog {
-            var c = URLComponents(string: "https://catalog.gog.com/v1/catalog")!
-            c.queryItems = [.init(name: "query", value: game.name), .init(name: "limit", value: "10"), .init(name: "countryCode", value: "US"), .init(name: "locale", value: "en-US"), .init(name: "currencyCode", value: "USD")]
-            let data = try await request(c.url!)
-            let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
-            let products = json["products"] as? [[String: Any]] ?? []
-            let exact = products.filter { Game.normalized($0["title"] as? String ?? "") == Game.normalized(game.name) }
-            if exact.count == 1, let path = exact[0]["storeLink"] as? String, let url = URL(string: path, relativeTo: URL(string: "https://www.gog.com"))?.absoluteURL { return try await page(url.absoluteString) }
+        var primary: Metadata?
+        if !game.storeURL.isEmpty { primary = try? await page(game.storeURL) }
+        if primary == nil, game.store == .gog { primary = try? await gog(game.name) }
+        if primary?.incomplete != false {
+            if let matches = try? await search(game.name) {
+                let exact = matches.filter { Game.normalized($0.name) == Game.normalized(game.name) }
+                if exact.count == 1, let fallback = try? await steam(exact[0].id) {
+                    if var existing = primary { existing.fillMissing(from: fallback); primary = existing }
+                    else { primary = fallback }
+                }
+            }
         }
-        throw LibraryError.invalid("No unambiguous metadata match for \(game.name). Use Find metadata to choose a match or paste its store page.")
+        guard let primary else { throw LibraryError.invalid("No unambiguous metadata match for \(game.name). Use Find metadata to choose a match or paste its store page.") }
+        return primary
     }
+    private func gog(_ name: String) async throws -> Metadata {
+        var c = URLComponents(string: "https://catalog.gog.com/v1/catalog")!
+        c.queryItems = [.init(name: "query", value: name), .init(name: "limit", value: "10"), .init(name: "countryCode", value: "US"), .init(name: "locale", value: "en-US"), .init(name: "currencyCode", value: "USD")]
+        let data = try await request(c.url!)
+        let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
+        let products = json["products"] as? [[String: Any]] ?? []
+        let exact = products.filter { Game.normalized($0["title"] as? String ?? "") == Game.normalized(name) }
+        if exact.count == 1, let path = exact[0]["storeLink"] as? String, let url = URL(string: path, relativeTo: URL(string: "https://www.gog.com"))?.absoluteURL { return try await page(url.absoluteString) }
+        throw LibraryError.invalid("No unambiguous GOG metadata match.")
+    }
+
 }
 
 public enum HTML {

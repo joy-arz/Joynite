@@ -34,6 +34,7 @@ import UniformTypeIdentifiers
     @Published var carouselPosition = 0
     private var started = false
     private var startupCounts: [String: UInt32] = [:]
+    private var launchGate = LaunchGate()
     private var processes: [String: Process] = [:]
     private var launchedApplications: [Int32: (String, Date)] = [:]
     private var terminationObserver: NSObjectProtocol?
@@ -133,7 +134,7 @@ import UniformTypeIdentifiers
         guard !started else { return }; started = true
         await scan(fetchMetadata: false)
         await prepareOfflineLibrary()
-        if !busy { busy = true; await enrich(games.filter { $0.metadataUpdated == nil }); busy = false }
+        if !busy { busy = true; await enrich(games.filter { MetadataClient.needsMetadata($0) }); busy = false }
         status = "\(games.count) games in your library. \(issues.count) notices."
     }
     func move(_ offset: Int) {
@@ -234,7 +235,7 @@ import UniformTypeIdentifiers
         ensureSelection()
         issues = result.warnings; save(); await reconcileUninstalls()
         status = "Imported \(count) new games. Fetching missing metadata…"
-        if fetchMetadata { await enrich(games.filter { $0.metadataUpdated == nil }) }
+        if fetchMetadata { await enrich(games.filter { MetadataClient.needsMetadata($0) }) }
         status = "\(games.count) games in your library. \(issues.count) notices."
     }
     private func enrich(_ pending: [Game]) async {
@@ -263,7 +264,7 @@ import UniformTypeIdentifiers
             selection = game.id
         }
         save()
-        Task { guard !busy else { return }; busy = true; await enrich(games.filter { $0.metadataUpdated == nil }); busy = false; status = "Game import finished." }
+        Task { guard !busy else { return }; busy = true; await enrich(games.filter { MetadataClient.needsMetadata($0) }); busy = false; status = "Game import finished." }
     }
     func addFolder() {
         guard writable else { error = "Library is read-only. Restore its backup before making changes."; return }
@@ -273,13 +274,15 @@ import UniformTypeIdentifiers
         Task { await scan() }
     }
     private func failLaunch(_ message: String, game: Game) {
+        launchGate.finish(game.id, accepted: false)
         report(LaunchReport(state: "failed", detail: message), gameID: game.id); error = message
     }
     func launch(_ game: Game) {
         guard !restoringBackup else { return }
+        guard launchGate.begin(game.id) else { status = "A launch request for this game is already being handed off."; return }
         if game.launchKind == .compatibility {
             guard let plan = game.compatibility else { failLaunch("Compatibility launch settings are missing.", game: game); return }
-            do { try runCompatibility(plan, id: game.id); didLaunch(game) } catch { report(LaunchReport(state: "failed", detail: error.localizedDescription), gameID: game.id); self.error = error.localizedDescription }
+            do { try runCompatibility(plan, id: game.id); didLaunch(game) } catch { failLaunch(error.localizedDescription, game: game) }
             return
         }
         if game.launchKind == .application {
@@ -288,12 +291,12 @@ import UniformTypeIdentifiers
             status = "Launching \(game.name)…"
             NSWorkspace.shared.openApplication(at: url, configuration: .init()) { app, failure in
                 Task { @MainActor in
-                    if let failure { self.report(LaunchReport(state: "failed", detail: failure.localizedDescription), gameID: game.id); self.error = "Could not launch \(game.name): \(failure.localizedDescription)" }
+                    if let failure { self.failLaunch("Could not launch \(game.name): \(failure.localizedDescription)", game: game) }
                     else if let app {
                         self.launchedApplications[app.processIdentifier] = (game.id, Date())
                         self.report(LaunchReport(state: "accepted", detail: "macOS accepted the application launch. Reaching the game menu is not verified.", processID: app.processIdentifier), gameID: game.id)
                         self.didLaunch(game)
-                    }
+                    } else { self.failLaunch("macOS did not return an application for this request.", game: game) }
                 }
             }
         } else {
@@ -329,6 +332,7 @@ import UniformTypeIdentifiers
         report(LaunchReport(state: "accepted", detail: "The original compatibility runtime started. Game readiness is not verified.", processID: process.processIdentifier), gameID: id)
     }
     private func didLaunch(_ game: Game) {
+        launchGate.finish(game.id, accepted: true)
         guard var current = games.first(where: { $0.id == game.id }) else { return }
         current.recordLaunch()
         if update(current) { status = "Launch request accepted for \(game.name). \(current.launchCount ?? 0) opens via Joynite." }
@@ -354,6 +358,8 @@ import UniformTypeIdentifiers
                 alert.informativeText = "Move \(url.path) to Trash, including any data inside the application bundle. External saves are left in place. The library entry and offline artwork are removed only after the move succeeds. You can recover the application from Trash."
                 alert.addButton(withTitle: "Move to Trash"); alert.addButton(withTitle: "Cancel")
                 guard alert.runModal() == .alertFirstButtonReturn else { return }
+                var pending = game; pending.pendingUninstall = true
+                library = try storage.replacing(pending, in: library)
                 NSWorkspace.shared.recycle([url]) { _, failure in
                     Task { @MainActor in
                         if let failure { self.error = "Uninstall failed: \(failure.localizedDescription)"; return }
@@ -385,7 +391,9 @@ import UniformTypeIdentifiers
         } catch { self.error = error.localizedDescription }
     }
     private func finishUninstall(_ game: Game) async {
-        library.games.removeAll { $0.id == game.id }; save(); ensureSelection()
+        do { library = try storage.removing(game.id, from: library) }
+        catch { self.error = "Could not save uninstall cleanup. Offline metadata and artwork were retained: \(error.localizedDescription)"; return }
+        ensureSelection()
         do { try await media.remove(gameID: game.id) } catch { issues.append("Offline artwork cleanup: \(error.localizedDescription)") }
         cacheRevision += 1; status = "Uninstalled \(game.name)."
     }

@@ -19,7 +19,7 @@ public actor MediaCache {
         SHA256.hash(data: Data(value.utf8)).map { String(format: "%02x", $0) }.joined()
     }
     public nonisolated static func portraitURL(for game: Game) -> String? {
-        var id = game.store == .steam ? game.storeID : ""
+        var id = game.store == .steam ? game.storeID : game.metadataSteamId ?? ""
         if id.isEmpty, let url = URL(string: game.storeURL), url.host == "store.steampowered.com" {
             let components = url.pathComponents
             if let index = components.firstIndex(of: "app"), index + 1 < components.count { id = components[index + 1] }
@@ -44,13 +44,31 @@ public actor MediaCache {
            let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
            let width = properties[kCGImagePropertyPixelWidth] as? Int, let height = properties[kCGImagePropertyPixelHeight] as? Int, role.fits(width: width, height: height) { return key }
         guard (ProcessInfo.processInfo.environment["JOYNITE_OFFLINE"] ?? ProcessInfo.processInfo.environment["PLAYNITE_OFFLINE"]) != "1" else { throw LibraryError.invalid("Offline mode: cached artwork remains available.") }
+        let retry = directory(for: gameID).appendingPathComponent("retry-" + Self.identifier(remote + ":" + role.rawValue))
+        if let data = try? Data(contentsOf: retry), let until = try? JSONDecoder().decode(Date.self, from: data), until > Date() {
+            throw LibraryError.invalid("Artwork retry is temporarily paused after an unsuccessful request.")
+        }
+        func pauseRetry() {
+            try? FileManager.default.createDirectory(at: retry.deletingLastPathComponent(), withIntermediateDirectories: true)
+            if let data = try? JSONEncoder().encode(Date().addingTimeInterval(300)) { try? data.write(to: retry, options: .atomic) }
+        }
         var request = URLRequest(url: url); request.timeoutInterval = 18
-        let (temporary, response) = try await session.download(for: request)
+        let temporary: URL
+        let response: URLResponse
+        do { (temporary, response) = try await session.download(for: request) }
+        catch { if !Task.isCancelled { pauseRetry() }; throw error }
         defer { try? FileManager.default.removeItem(at: temporary) }
-        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode), http.url?.scheme == "https" else { throw LibraryError.invalid("Artwork download failed.") }
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode), http.url?.scheme == "https" else { pauseRetry(); throw LibraryError.invalid("Artwork download failed.") }
         let size = try temporary.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
         guard size > 0, size <= 24_000_000 else { throw LibraryError.invalid("Artwork exceeds the 24 MB limit.") }
-        return try store(Data(contentsOf: temporary), gameID: gameID, key: key, role: role)
+        let data = try Data(contentsOf: temporary)
+        if let source = CGImageSourceCreateWithData(data as CFData, nil),
+           let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+           let width = properties[kCGImagePropertyPixelWidth] as? Int, let height = properties[kCGImagePropertyPixelHeight] as? Int,
+           !role.fits(width: width, height: height) { pauseRetry(); throw LibraryError.invalid("Artwork does not fit the requested aspect ratio.") }
+        let stored = try store(data, gameID: gameID, key: key, role: role)
+        try? FileManager.default.removeItem(at: retry)
+        return stored
     }
     @discardableResult public func store(_ data: Data, gameID: String, key: String, role: CachedImageRole = .any) throws -> String {
         guard key.range(of: "^[a-f0-9]{64}\\.png$", options: .regularExpression) != nil,

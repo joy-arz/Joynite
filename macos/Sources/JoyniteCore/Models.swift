@@ -40,6 +40,7 @@ public struct Game: Identifiable, Codable, Equatable, Sendable {
     public var pendingUninstall: Bool?
     public var storeURL = ""
     public var metadataSource = ""
+    public var metadataSteamId: String?
     public var metadataUpdated: Date?
     public var favorite = false
     public var launchCount: UInt32?
@@ -86,8 +87,25 @@ public struct Metadata: Equatable, Sendable {
     public var name: String, summary: String, developer: String, releaseDate: String, artwork: String, url: String, source: String
     public var genres: [String]
     public var background: String
-    public init(name: String = "", summary: String = "", developer: String = "", releaseDate: String = "", artwork: String = "", url: String = "", source: String = "", genres: [String] = [], background: String = "") {
-        self.name = name; self.summary = summary; self.developer = developer; self.releaseDate = releaseDate; self.artwork = artwork; self.url = url; self.source = source; self.genres = genres; self.background = background
+    public var steamID: String
+    public init(name: String = "", summary: String = "", developer: String = "", releaseDate: String = "", artwork: String = "", url: String = "", source: String = "", genres: [String] = [], background: String = "", steamID: String = "") {
+        self.name = name; self.summary = summary; self.developer = developer; self.releaseDate = releaseDate; self.artwork = artwork; self.url = url; self.source = source; self.genres = genres; self.background = background; self.steamID = steamID
+    }
+    public var incomplete: Bool { summary.isEmpty || developer.isEmpty || releaseDate.isEmpty || genres.isEmpty || artwork.isEmpty || background.isEmpty }
+    public mutating func fillMissing(from fallback: Metadata) {
+        let before = self
+        if name.isEmpty { name = fallback.name }
+        if summary.isEmpty { summary = fallback.summary }
+        if developer.isEmpty { developer = fallback.developer }
+        if releaseDate.isEmpty { releaseDate = fallback.releaseDate }
+        if artwork.isEmpty { artwork = fallback.artwork }
+        if background.isEmpty { background = fallback.background }
+        if url.isEmpty { url = fallback.url }
+        if genres.isEmpty { genres = fallback.genres }
+        if steamID.isEmpty { steamID = fallback.steamID }
+        if self != before, !fallback.source.isEmpty, !source.contains(fallback.source) {
+            source = source.isEmpty ? fallback.source : source + " + " + fallback.source
+        }
     }
     public func applying(to original: Game) -> Game {
         var game = original
@@ -102,6 +120,7 @@ public struct Metadata: Equatable, Sendable {
         if !artwork.isEmpty { game.artwork = artwork }
         if !background.isEmpty { game.backgroundArtwork = background }
         if !url.isEmpty { game.storeURL = url }
+        game.metadataSteamId = steamID.isEmpty ? nil : steamID
         game.refreshMetadataSource(); game.metadataUpdated = Date()
         return game
     }
@@ -128,6 +147,12 @@ public final class LibraryStorage {
     public func replacing(_ game: Game, in library: LibraryFile) throws -> LibraryFile {
         guard let index = library.games.firstIndex(where: { $0.id == game.id }) else { throw LibraryError.invalid("Game no longer exists.") }
         var next = library; next.games[index] = game
+        try save(next)
+        return next
+    }
+    public func removing(_ id: String, from library: LibraryFile) throws -> LibraryFile {
+        var next = library
+        next.games.removeAll { $0.id == id }
         try save(next)
         return next
     }

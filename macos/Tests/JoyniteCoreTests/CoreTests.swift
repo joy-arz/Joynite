@@ -4,6 +4,67 @@ import JoyniteCore
 import ZIPFoundation
 
 final class CoreTests {
+    func testUninstallCommitFailureAndLaunchGate() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let storage = LibraryStorage(url: root.appendingPathComponent("library.json"))
+        let game = Game(id: "one", name: "One", store: .local, launchKind: .application, launchTarget: "/fixture/Game.app")
+        let library = LibraryFile(games: [game])
+        try storage.save(library)
+        let before = try Data(contentsOf: storage.url)
+        try FileManager.default.createDirectory(at: storage.url.appendingPathExtension("backup"), withIntermediateDirectories: true)
+        XCTAssertThrowsError(try storage.removing(game.id, from: library))
+        try XCTAssertEqual(try Data(contentsOf: storage.url), before)
+        XCTAssertEqual(library.games.count, 1)
+        try FileManager.default.removeItem(at: storage.url.appendingPathExtension("backup"))
+        try XCTAssertTrue(try storage.removing(game.id, from: library).games.isEmpty)
+        var gate = LaunchGate()
+        let now = Date()
+        XCTAssertTrue(gate.begin("one", now: now))
+        XCTAssertFalse(gate.begin("one", now: now.addingTimeInterval(30)))
+        XCTAssertTrue(gate.begin("other", now: now))
+        gate.finish("one", accepted: false, now: now)
+        XCTAssertTrue(gate.begin("one", now: now))
+        gate.finish("one", accepted: true, now: now)
+        XCTAssertFalse(gate.begin("one", now: now.addingTimeInterval(1)))
+        XCTAssertTrue(gate.begin("one", now: now.addingTimeInterval(3)))
+    }
+    func testMetadataFallback() async throws {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [MetadataFixtureProtocol.self]
+        let session = URLSession(configuration: config)
+        defer { session.invalidateAndCancel() }
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let remote = "https://example.itch.io/cover.png"
+        let cache = MediaCache(root: root, session: session)
+        let folder = cache.directory(for: "game")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let retry = folder.appendingPathComponent("retry-" + MediaCache.identifier(remote + ":portrait"))
+        try JSONEncoder().encode(Date().addingTimeInterval(300)).write(to: retry)
+        do { _ = try await cache.cache(remote, gameID: "game", role: .portrait); failures.append("Expected artwork cooldown") }
+        catch { XCTAssertTrue(error.localizedDescription.contains("temporarily paused")) }
+        let client = MetadataClient(session: session)
+        var game = Game(id: "fixture", name: "Fixture", store: .local, launchKind: .application, launchTarget: "/fixture/Game.app")
+        game.storeURL = "https://example.itch.io/blocked"
+        let rescued = try await client.automatic(game)
+        XCTAssertEqual(rescued.developer, "Fixture developer")
+        game.storeURL = "https://example.itch.io/partial"
+        let combined = try await client.automatic(game)
+        XCTAssertEqual(combined.summary, "Original store summary")
+        XCTAssertEqual(combined.developer, "Fixture developer")
+        XCTAssertEqual(combined.url, game.storeURL)
+        game.applyCustomMetadata(changes: ["summary": "My summary"], reset: false)
+        let updated = combined.applying(to: game)
+        XCTAssertEqual(updated.summary, "My summary")
+        XCTAssertEqual(updated.launchTarget, game.launchTarget)
+        XCTAssertEqual(updated.metadataSteamId, "123")
+        XCTAssertTrue(MediaCache.portraitURL(for: updated)?.contains("/123/") == true)
+        let now = Date()
+        game.metadataUpdated = now
+        XCTAssertFalse(MetadataClient.needsMetadata(game, now: now))
+        XCTAssertTrue(MetadataClient.needsMetadata(game, now: now.addingTimeInterval(86401)))
+    }
     func testLocalLaunchCountsAndHomeOrder() throws {
         var games = (1...9).map { value -> Game in
             var game = Game(id: String(value), name: "Game \(value)", store: .local, launchKind: .application, launchTarget: "/fixture/Game.app")
@@ -435,6 +496,7 @@ private func XCTAssertThrowsError<T>(_ value: @autoclosure () throws -> T, line:
         }
         let suite = CoreTests()
         let tests: [(String, () throws -> Void)] = [
+            ("Uninstall save failure and launch handoff guard", suite.testUninstallCommitFailureAndLaunchGate),
             ("Local launch counts, startup center and stable session order", suite.testLocalLaunchCountsAndHomeOrder),
             ("Local launch diagnostic report integrity", suite.testLaunchReportsStayLocalAndPreserveExitDetails),
             ("Backup traversal and altered-content rejection", suite.testBackupRejectsPathsAndChangedContent),
@@ -462,6 +524,8 @@ private func XCTAssertThrowsError<T>(_ value: @autoclosure () throws -> T, line:
             do { try test() } catch { failures.append("\(name): \(error.localizedDescription)") }
             print("\(failures.count == before ? "PASS" : "FAIL"): \(name)")
         }
+        do { try await suite.testMetadataFallback(); print("PASS: Metadata provider failure, partial fallback and retry policy") }
+        catch { failures.append("Metadata fallback: \(error.localizedDescription)") }
         do {
             let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
             defer { try? FileManager.default.removeItem(at: root) }
@@ -509,4 +573,26 @@ private func XCTAssertThrowsError<T>(_ value: @autoclosure () throws -> T, line:
         failures.forEach { print("FAIL: " + $0) }
         exit(failures.isEmpty ? 0 : 1)
     }
+}
+
+private final class MetadataFixtureProtocol: URLProtocol, @unchecked Sendable {
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        let url = request.url!
+        let status: Int
+        let body: String
+        if url.path == "/blocked" { status = 403; body = "Blocked" }
+        else if url.path == "/partial" {
+            status = 200; body = "<meta property='og:title' content='Fixture'><meta property='og:description' content='Original store summary'>"
+        } else if url.path.contains("storesearch") {
+            status = 200; body = #"{"items":[{"type":"app","id":123,"name":"Fixture"}]}"#
+        } else {
+            status = 200; body = #"{"123":{"success":true,"data":{"name":"Fixture","short_description":"Steam summary","developers":["Fixture developer"],"release_date":{"date":"Jan 1, 2020"},"header_image":"https://cdn.example/landscape.jpg","genres":[{"description":"Puzzle"}]}}}"#
+        }
+        client?.urlProtocol(self, didReceive: HTTPURLResponse(url: url, statusCode: status, httpVersion: nil, headerFields: nil)!, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: Data(body.utf8))
+        client?.urlProtocolDidFinishLoading(self)
+    }
+    override func stopLoading() {}
 }
