@@ -103,8 +103,8 @@ async fn update_game(
 ) -> Result<Snapshot, String> {
     let mut store = state.store.lock().map_err(|e| e.to_string())?;
     store.ensure_writable()?;
-    let game = store
-        .library
+    let mut next = store.library.clone();
+    let game = next
         .games
         .iter_mut()
         .find(|g| g.id == id)
@@ -115,17 +115,18 @@ async fn update_game(
     if let Some(value) = hidden {
         game.hidden = Some(value)
     }
-    store.save()?;
+    store.commit(next)?;
     Ok(store.snapshot())
 }
 #[tauri::command]
 async fn restore_hidden(state: State<'_>) -> Result<Snapshot, String> {
     let mut store = state.store.lock().map_err(|e| e.to_string())?;
     store.ensure_writable()?;
-    for game in &mut store.library.games {
+    let mut next = store.library.clone();
+    for game in &mut next.games {
         game.hidden = Some(false)
     }
-    store.save()?;
+    store.commit(next)?;
     Ok(store.snapshot())
 }
 #[tauri::command]
@@ -222,17 +223,17 @@ async fn add_game(state: State<'_>, path: String) -> Result<Snapshot, String> {
     };
     let mut store = state.store.lock().map_err(|e| e.to_string())?;
     store.ensure_writable()?;
-    if let Some(existing) = store
-        .library
+    let mut next = store.library.clone();
+    if let Some(existing) = next
         .games
         .iter_mut()
         .find(|g| g.install_path == game.install_path)
     {
         existing.hidden = Some(false)
     } else {
-        store.library.games.push(game)
+        next.games.push(game)
     }
-    store.save()?;
+    store.commit(next)?;
     Ok(store.snapshot())
 }
 #[tauri::command]
@@ -416,8 +417,8 @@ async fn save_custom_metadata(
         }
         let mut store = state.store.lock().map_err(|e| e.to_string())?;
         store.ensure_writable()?;
-        let game = store
-            .library
+        let mut next = store.library.clone();
+        let game = next
             .games
             .iter_mut()
             .find(|g| g.id == id)
@@ -442,7 +443,7 @@ async fn save_custom_metadata(
             game.custom_background = Some(key)
         }
         game.refresh_source();
-        store.save()?;
+        store.commit(next)?;
         Ok(store.snapshot())
     })
     .await

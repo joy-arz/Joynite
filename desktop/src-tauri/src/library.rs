@@ -638,6 +638,24 @@ pub fn uninstall_plan(game: &Game) -> Result<UninstallPlan, String> {
     if cfg!(windows) || game.launch_kind == "desktop" {
         return Ok(UninstallPlan{title:format!("Manage {} in the system uninstaller",game.name),message:"Use the original installer or system package manager to remove this game. Joynite does not remove a lone executable and leave the installation behind.".into(),method:"system".into()});
     }
+    let resolved = path
+        .canonicalize()
+        .map_err(|e| format!("Cannot verify uninstall target: {e}"))?;
+    if !path.is_absolute() || path != resolved || path.ancestors().any(Path::is_symlink) {
+        return Err(
+            "Uninstall requires the original application path, without links or parent traversal"
+                .into(),
+        );
+    }
+    if path.ancestors().skip(1).any(|parent| {
+        parent
+            .extension()
+            .is_some_and(|e| e.eq_ignore_ascii_case("app"))
+    }) {
+        return Err(
+            "Applications inside another application bundle cannot be uninstalled here".into(),
+        );
+    }
     if path.is_symlink()
         || game.install_path != game.launch_target
         || !path.exists()
@@ -658,6 +676,18 @@ pub fn uninstall_plan(game: &Game) -> Result<UninstallPlan, String> {
             .starts_with("playnite")
     {
         return Err("Only the game's existing standalone app can be moved to Trash; system apps, links and Joynite are protected".into());
+    }
+    if path.extension().is_some_and(|e| e == "app") {
+        if let Ok(info) = plist::Value::from_file(path.join("Contents/Info.plist")) {
+            if info
+                .as_dictionary()
+                .and_then(|d| d.get("CFBundleIdentifier"))
+                .and_then(|v| v.as_string())
+                .is_some_and(crate::model::is_launcher_id)
+            {
+                return Err("Joynite cannot uninstall itself".into());
+            }
+        }
     }
     if !path
         .extension()
@@ -682,6 +712,7 @@ pub fn uninstall(store: &mut Store, id: &str) -> Result<(), String> {
             .ok_or("Game no longer exists")?
             .pending_uninstall = Some(true);
         store.commit(pending)?;
+        uninstall_plan(&game)?;
         trash::delete(&game.launch_target).map_err(|e| e.to_string())?;
         if Path::new(&game.launch_target).exists() {
             return Err("Application is still present; metadata retained".into());
@@ -712,10 +743,11 @@ pub fn uninstall(store: &mut Store, id: &str) -> Result<(), String> {
             command.arg(parent);
             spawn_reaped(&mut command)?;
         }
-        if let Some(current) = store.library.games.iter_mut().find(|g| g.id == id) {
+        let mut next = store.library.clone();
+        if let Some(current) = next.games.iter_mut().find(|g| g.id == id) {
             current.pending_uninstall = Some(true)
         }
-        store.save()?;
+        store.commit(next)?;
     }
     Ok(())
 }
@@ -754,7 +786,8 @@ pub fn enrich(state: &AppState, id: &str, source: Option<&str>) -> Result<(), St
     details.apply(&mut updated);
     client.artwork(&mut updated, &root);
     let mut store = state.store.lock().map_err(|e| e.to_string())?;
-    if let Some(current) = store.library.games.iter_mut().find(|g| g.id == id) {
+    let mut next = store.library.clone();
+    if let Some(current) = next.games.iter_mut().find(|g| g.id == id) {
         if current.metadata_updated != original.metadata_updated {
             return Ok(());
         }
@@ -765,7 +798,7 @@ pub fn enrich(state: &AppState, id: &str, source: Option<&str>) -> Result<(), St
         current.cached_artwork = updated.cached_artwork;
         current.cached_landscape = updated.cached_landscape;
         current.cached_background = updated.cached_background;
-        store.save()?;
+        store.commit(next)?;
     } else {
         let _ = fs::remove_dir_all(root.join("Media").join(hash(id)));
     }
@@ -850,7 +883,8 @@ impl AppState {
             let mut game = original.clone();
             client.artwork(&mut game, &root);
             let mut store = self.store.lock().map_err(|e| e.to_string())?;
-            if let Some(current) = store.library.games.iter_mut().find(|g| g.id == game.id) {
+            let mut next = store.library.clone();
+            if let Some(current) = next.games.iter_mut().find(|g| g.id == game.id) {
                 if current.artwork == original.artwork {
                     let changed = current.cached_artwork != game.cached_artwork
                         || current.cached_landscape != game.cached_landscape
@@ -859,7 +893,7 @@ impl AppState {
                     current.cached_landscape = game.cached_landscape;
                     current.cached_background = game.cached_background;
                     if changed {
-                        store.save()?;
+                        store.commit(next)?;
                         drop(store);
                         if let Ok(patch) = self.patch(&game.id, &mut notice_cursor) {
                             notify(patch)
@@ -1288,5 +1322,75 @@ mod launch_settings_persistence_tests {
             serde_json::from_slice(&fs::read(t.path().join("library.json.backup")).unwrap())
                 .unwrap();
         assert!(backup.games[0].launch_action.is_some());
+    }
+}
+
+#[cfg(test)]
+mod review_regressions {
+    use super::*;
+    #[cfg(unix)]
+    #[test]
+    fn uninstall_rejects_ancestor_links_and_nested_applications() {
+        let t = tempfile::tempdir().unwrap();
+        let root = t.path().canonicalize().unwrap();
+        let nested = root.join("Parent.app/Contents/Child.app");
+        fs::create_dir_all(&nested).unwrap();
+        let alias = root.join("Games");
+        std::os::unix::fs::symlink(nested.parent().unwrap(), &alias).unwrap();
+        for target in [nested, alias.join("Child.app")] {
+            let game = Game {
+                launch_target: target.to_string_lossy().into(),
+                install_path: target.to_string_lossy().into(),
+                ..Default::default()
+            };
+            assert!(uninstall_plan(&game).is_err());
+        }
+        let normal = root.join("Normal.app");
+        fs::create_dir(&normal).unwrap();
+        let game = Game {
+            launch_target: normal.to_string_lossy().into(),
+            install_path: normal.to_string_lossy().into(),
+            ..Default::default()
+        };
+        assert_eq!(uninstall_plan(&game).unwrap().method, "trash");
+    }
+    #[test]
+    fn rejected_edits_never_enter_live_state_or_later_saves() {
+        let t = tempfile::tempdir().unwrap();
+        let mut store = Store {
+            root: t.path().into(),
+            library: Library {
+                games: vec![Game {
+                    id: "fixture".into(),
+                    summary: "Original".into(),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            },
+            error: None,
+            notices: vec![],
+            revision: 1,
+        };
+        store.save().unwrap();
+        let before = fs::read(t.path().join("library.json")).unwrap();
+        let blocker = t.path().join(format!("library.{}.tmp", std::process::id()));
+        fs::create_dir(&blocker).unwrap();
+        let mut next = store.library.clone();
+        next.games[0].favorite = true;
+        next.games[0].hidden = Some(true);
+        next.games[0].apply_custom(
+            std::collections::BTreeMap::from([("summary".into(), "Rejected".into())]),
+            false,
+        );
+        assert!(store.commit(next).is_err());
+        assert!(!store.library.games[0].favorite);
+        assert_eq!(store.library.games[0].summary, "Original");
+        assert_eq!(fs::read(t.path().join("library.json")).unwrap(), before);
+        fs::remove_dir(blocker).unwrap();
+        store.save().unwrap();
+        let saved: Library =
+            serde_json::from_slice(&fs::read(t.path().join("library.json")).unwrap()).unwrap();
+        assert!(!saved.games[0].favorite);
+        assert_eq!(saved.games[0].summary, "Original");
     }
 }

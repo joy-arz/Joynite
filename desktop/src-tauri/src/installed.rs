@@ -170,7 +170,6 @@ pub fn registry_gog_roots(text: &str) -> Vec<PathBuf> {
 }
 #[cfg(windows)]
 pub fn windows_gog_roots() -> Vec<PathBuf> {
-    use std::os::windows::process::CommandExt;
     let mut roots = vec![PathBuf::from(r"C:\GOG Games")];
     for base in [
         r"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
@@ -178,9 +177,8 @@ pub fn windows_gog_roots() -> Vec<PathBuf> {
         r"HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
         r"HKCU\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall",
     ] {
-        if let Ok(output) = std::process::Command::new("reg.exe")
+        if let Ok(output) = crate::windows_launch::background_command("reg.exe")
             .args(["query", base, "/s"])
-            .creation_flags(0x08000000)
             .output()
         {
             roots.extend(registry_gog_roots(&String::from_utf8_lossy(&output.stdout)));

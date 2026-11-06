@@ -348,7 +348,7 @@ pub fn scan(home: &Path, folders: &[String]) -> Scan {
         if let Ok(program) = std::env::var("ProgramFiles(x86)") {
             steam.push(PathBuf::from(program).join("Steam/steamapps"))
         }
-        if let Ok(output) = std::process::Command::new("reg.exe")
+        if let Ok(output) = crate::windows_launch::background_command("reg.exe")
             .args(["query", r"HKCU\Software\Valve\Steam", "/v", "SteamPath"])
             .output()
         {

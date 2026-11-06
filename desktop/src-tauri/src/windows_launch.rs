@@ -10,6 +10,13 @@ use windows_sys::Win32::{
     },
 };
 
+pub fn background_command(program: &str) -> std::process::Command {
+    use std::os::windows::process::CommandExt;
+    let mut command = std::process::Command::new(program);
+    command.creation_flags(windows_sys::Win32::System::Threading::CREATE_NO_WINDOW);
+    command
+}
+
 fn wide(value: &OsStr) -> Result<Vec<u16>, String> {
     let mut value: Vec<_> = value.encode_wide().collect();
     if value.contains(&0) {
@@ -71,6 +78,13 @@ pub fn open_configured(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn background_probes_capture_output_without_requesting_a_console() {
+        let output = background_command("reg.exe")
+            .args(["query", r"HKCU\Software\Valve\Steam", "/v", "SteamPath"])
+            .output();
+        assert!(output.is_ok());
+    }
     #[test]
     fn unicode_paths_and_null_rejection() {
         assert_eq!(wide(OsStr::new("遊戲.exe")).unwrap().last(), Some(&0));

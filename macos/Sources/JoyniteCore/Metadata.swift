@@ -13,8 +13,8 @@ public actor MetadataClient {
         guard url.scheme == "https", Self.allowedHost(url.host ?? "") else { throw LibraryError.invalid("Use an HTTPS store page or a supported project/publisher page.") }
         var request = URLRequest(url: url, cachePolicy: .returnCacheDataElseLoad, timeoutInterval: 20)
         request.setValue("Joynite (+https://github.com/joy-arz/Joynite)", forHTTPHeaderField: "User-Agent")
-        let (data, response) = try await session.data(for: request)
-        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode), let finalURL = http.url, finalURL.scheme == "https", Self.allowedHost(finalURL.host ?? "") else {
+        let (data, response) = try await BoundedHTTP.data(for: request, maximumBytes: 12_000_000, session: session, acceptsURL: { $0.scheme == "https" && Self.allowedHost($0.host ?? "") })
+        guard (200..<300).contains(response.statusCode), let finalURL = response.url, finalURL.scheme == "https", Self.allowedHost(finalURL.host ?? "") else {
             throw LibraryError.invalid("\(url.host ?? "Store") could not provide metadata. Try a Steam match or a different store page.")
         }
         guard data.count < 12_000_000 else { throw LibraryError.invalid("Store response exceeds the 12 MB limit.") }

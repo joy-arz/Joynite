@@ -10,6 +10,7 @@ import {
   direction,
 } from "./model.mjs";
 import "./style.css";
+import { actionControl, routeActionController } from "./input-context.mjs";
 import { Backdrop } from "./backdrop.mjs";
 import { CarouselMotion, cardGeometry } from "./carousel-motion.mjs";
 import logo from "./logo.svg";
@@ -778,6 +779,7 @@ window.addEventListener("keydown", (event) => {
     scan();
     return;
   }
+  if (actionControl(event.target) && ["Enter", " ", "Tab"].includes(event.key)) return;
   if (
     event.key === " " &&
     !typing(event.target) &&
@@ -789,12 +791,6 @@ window.addEventListener("keydown", (event) => {
     if (!event.repeat) openSearch();
     return;
   }
-  if (
-    event.target instanceof HTMLElement &&
-    event.target.matches("button:not(.card),a") &&
-    ["Enter", " "].includes(event.key)
-  )
-    return;
   if (event.key === "Tab") {
     event.preventDefault();
     return;
@@ -926,7 +922,10 @@ function pollController(time) {
   }
   lastPadTime = time;
   padName = pad.id;
-  if (!modalOpen() && !typing(document.activeElement)) {
+  if (!modalOpen() && !typing(document.activeElement) && routeActionController(document.activeElement, pad.buttons, padButtons, closePanels)) {
+    held = 0;
+    padButtons = pad.buttons.map(button => button.pressed);
+  } else if (!modalOpen() && !typing(document.activeElement)) {
     const dir = direction(
       pad.axes[0] || 0,
       pad.buttons[14]?.pressed,

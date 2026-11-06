@@ -53,15 +53,10 @@ public actor MediaCache {
             if let data = try? JSONEncoder().encode(Date().addingTimeInterval(300)) { try? data.write(to: retry, options: .atomic) }
         }
         var request = URLRequest(url: url); request.timeoutInterval = 18
-        let temporary: URL
-        let response: URLResponse
-        do { (temporary, response) = try await session.download(for: request) }
+        let data: Data
+        do { (data, _) = try await BoundedHTTP.data(for: request, maximumBytes: 24_000_000, session: session) }
         catch { if !Task.isCancelled { pauseRetry() }; throw error }
-        defer { try? FileManager.default.removeItem(at: temporary) }
-        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode), http.url?.scheme == "https" else { pauseRetry(); throw LibraryError.invalid("Artwork download failed.") }
-        let size = try temporary.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
-        guard size > 0, size <= 24_000_000 else { throw LibraryError.invalid("Artwork exceeds the 24 MB limit.") }
-        let data = try Data(contentsOf: temporary)
+        guard !data.isEmpty else { throw LibraryError.invalid("Artwork response is empty.") }
         if let source = CGImageSourceCreateWithData(data as CFData, nil),
            let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
            let width = properties[kCGImagePropertyPixelWidth] as? Int, let height = properties[kCGImagePropertyPixelHeight] as? Int,

@@ -23,7 +23,8 @@ import UniformTypeIdentifiers
     @Published var showCustomMetadata = false
     @Published var showHelp = false
     @Published var issues: [String] = []
-    let metadata = MetadataClient()
+    let metadata: MetadataClient
+    private let discover: @Sendable ([String]) -> DiscoveryResult
     private let storage: LibraryStorage
     let media: MediaCache
     private var preparing = false
@@ -35,6 +36,7 @@ import UniformTypeIdentifiers
     private var started = false
     private var startupCounts: [String: UInt32] = [:]
     private var launchGate = LaunchGate()
+    private var metadataRequests: [String: UUID] = [:]
     private var processes: [String: Process] = [:]
     private var launchedApplications: [Int32: (String, Date)] = [:]
     private var terminationObserver: NSObjectProtocol?
@@ -107,7 +109,8 @@ import UniformTypeIdentifiers
         guard text == search else { return false }
         return commitSearch(select: id)
     }
-    init() {
+    init(metadata: MetadataClient = MetadataClient(), discover: @escaping @Sendable ([String]) -> DiscoveryResult = { Discovery().scan(folders: $0) }) {
+        self.metadata = metadata; self.discover = discover
         let environment = ProcessInfo.processInfo.environment
         let override = environment["JOYNITE_DATA_DIRECTORY"] ?? environment["PLAYNITE_DATA_DIRECTORY"]
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -154,9 +157,10 @@ import UniformTypeIdentifiers
             if let entry = PublisherCatalog.match(game.name), game.metadataSource.isEmpty {
                 game = entry.metadata.applying(to: game); update(game)
             }
-            if game.backgroundArtwork == nil, game.metadataSource == "Steam", !busy,
-               let details = try? await metadata.automatic(game), let current = games.first(where: { $0.id == game.id }) {
-                game = details.applying(to: current); update(game)
+            if game.backgroundArtwork == nil, game.metadataSource == "Steam", !busy {
+                let request = beginMetadataRequest(for: game.id)
+                if let details = try? await metadata.automatic(game) { await applyMetadata(details, to: game.id, request: request) }
+                if let current = games.first(where: { $0.id == game.id }) { game = current }
             }
             await cacheArtwork(game)
         }
@@ -186,16 +190,22 @@ import UniformTypeIdentifiers
         if (current.backgroundArtwork ?? "") == background { current.cachedBackground = game.cachedBackground }
         if oldPoster != game.cachedArtwork || oldBackground != game.cachedBackground || oldLandscape != game.cachedLandscape { update(current); cacheRevision += 1 }
     }
-    func applyMetadata(_ details: Metadata, to id: String) async {
-        guard let current = games.first(where: { $0.id == id }) else { return }
+    func beginMetadataRequest(for id: String) -> UUID {
+        let token = UUID(); metadataRequests[id] = token; return token
+    }
+    @discardableResult func applyMetadata(_ details: Metadata, to id: String, request: UUID? = nil) async -> Bool {
+        let token = request ?? beginMetadataRequest(for: id)
+        guard metadataRequests[id] == token, let current = games.first(where: { $0.id == id }) else { return false }
         let updated = details.applying(to: current)
-        update(updated)
+        guard update(updated) else { return false }
         await cacheArtwork(updated)
+        return metadataRequests[id] == token
     }
     func saveCustomMetadata(id: String, changes: [String: String], resetText: Bool, images: [String: URL], resetImages: Set<String>) async throws {
         guard writable else { throw LibraryError.invalid("The library is read-only.") }
         guard changes.values.allSatisfy({ $0.utf8.count <= 50_000 }) else { throw LibraryError.invalid("Metadata fields must be shorter than 50,000 bytes.") }
         if let name = changes["name"], name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { throw LibraryError.invalid("Game title cannot be empty.") }
+        _ = beginMetadataRequest(for: id)
         var imported: [String: String] = [:]
         for (role, url) in images { imported[role] = try await media.importImage(url, gameID: id) }
         guard var current = games.first(where: { $0.id == id }) else { try? await media.remove(gameID: id); throw LibraryError.invalid("Game no longer exists.") }
@@ -222,18 +232,15 @@ import UniformTypeIdentifiers
         guard !busy, writable else { return }
         busy = true; status = "Scanning installed games…"; defer { busy = false }
         let folders = library.folders
-        let result = await Task.detached { Discovery().scan(folders: folders) }.value
-        var count = 0
-        for found in result.games {
-            if let i = library.games.firstIndex(where: { $0.id == found.id }) {
-                library.games[i].launchTarget = found.launchTarget; library.games[i].installPath = found.installPath
-                library.games[i].compatibility = found.compatibility
-            } else if !library.games.contains(where: { !$0.installPath.isEmpty && $0.installPath == found.installPath && $0.launchKind == found.launchKind }) {
-                library.games.append(found); count += 1
-            }
-        }
+        let discover = self.discover
+        let result = await Task.detached { discover(folders) }.value
+        let merged = LibraryMerge.discovery(result.games, into: library)
+        do {
+            if merged.library != library { try storage.save(merged.library); library = merged.library }
+        } catch { self.error = "Could not save scan results: \(error.localizedDescription)"; return }
         ensureSelection()
-        issues = result.warnings; save(); await reconcileUninstalls()
+        issues = result.warnings; await reconcileUninstalls()
+        let count = merged.added
         status = "Imported \(count) new games. Fetching missing metadata…"
         if fetchMetadata { await enrich(games.filter { MetadataClient.needsMetadata($0) }) }
         status = "\(games.count) games in your library. \(issues.count) notices."
@@ -243,8 +250,10 @@ import UniformTypeIdentifiers
             if Task.isCancelled { break }
             do {
                 status = "Finding metadata for \(game.name)…"
-                let details = try await metadata.automatic(game)
-                await applyMetadata(details, to: game.id)
+                guard let current = games.first(where: { $0.id == game.id }), current.metadataUpdated == game.metadataUpdated else { continue }
+                let request = beginMetadataRequest(for: game.id)
+                let details = try await metadata.automatic(current)
+                await applyMetadata(details, to: game.id, request: request)
             } catch { issues.append(error.localizedDescription) }
             try? await Task.sleep(nanoseconds: 300_000_000)
         }
@@ -279,6 +288,10 @@ import UniformTypeIdentifiers
     }
     func launch(_ game: Game) {
         guard !restoringBackup else { return }
+        guard [.application, .store, .compatibility].contains(game.launchKind), game.extra["launchAction"] == nil || game.extra["launchAction"] == .null else {
+            error = "This game uses launch settings from the shared desktop edition. Its metadata is retained; open it there or re-add its native Mac application."
+            return
+        }
         guard launchGate.begin(game.id) else { status = "A launch request for this game is already being handed off."; return }
         if game.launchKind == .compatibility {
             guard let plan = game.compatibility else { failLaunch("Compatibility launch settings are missing.", game: game); return }

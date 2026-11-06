@@ -506,15 +506,18 @@ struct MetadataSheet: View {
     }
     private func applySteam(_ match: SearchMatch) {
         loading = true
-        Task { do { apply(try await model.metadata.steam(match.id)) } catch { message = error.localizedDescription }; loading = false }
+        let request = model.beginMetadataRequest(for: game.id)
+        Task { do { await apply(try await model.metadata.steam(match.id), request: request) } catch { message = error.localizedDescription }; loading = false }
     }
     private func fetchPage() {
         loading = true
-        Task { do { apply(try await model.metadata.page(page)) } catch { message = error.localizedDescription }; loading = false }
+        let request = model.beginMetadataRequest(for: game.id)
+        Task { do { await apply(try await model.metadata.page(page), request: request) } catch { message = error.localizedDescription }; loading = false }
     }
-    private func apply(_ metadata: Metadata) {
-        Task { await model.applyMetadata(metadata, to: game.id) }
-        model.status = "Metadata updated for \(game.name)."; dismiss()
+    private func apply(_ metadata: Metadata, request: UUID) async {
+        if await model.applyMetadata(metadata, to: game.id, request: request) {
+            model.status = "Metadata updated for \(game.name)."; dismiss()
+        } else { message = model.error ?? "A newer metadata selection replaced this request." }
     }
 }
 struct HelpSheet: View {
@@ -553,7 +556,10 @@ struct PublisherSheet: View {
                     VStack(alignment: .leading, spacing: 4) { Text(entry.metadata.name).font(.headline); Text(entry.metadata.developer).font(.caption).foregroundStyle(.secondary) }
                     Spacer()
                     if let game = model.selected {
-                        Button("Use for selected game") { Task { let details = await model.metadata.publisher(entry); await model.applyMetadata(details, to: game.id) }; dismiss() }
+                        Button("Use for selected game") {
+                            let request = model.beginMetadataRequest(for: game.id)
+                            Task { let details = await model.metadata.publisher(entry); if await model.applyMetadata(details, to: game.id, request: request) { dismiss() } }
+                        }
                     }
                     Link(destination: URL(string: entry.metadata.url)!) { Image(systemName: "arrow.up.right.square") }
                 }.padding(.vertical, 8)

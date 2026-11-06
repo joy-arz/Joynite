@@ -4,6 +4,52 @@ import JoyniteCore
 import ZIPFoundation
 
 final class CoreTests {
+    func testSharedWireContractAndBatchMerge() throws {
+        let fixtures = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../../desktop/tests/fixtures").standardizedFileURL
+        for name in ["library-v1-native.json", "library-v1-shared.json"] {
+            let library = try JSONDecoder().decode(LibraryFile.self, from: Data(contentsOf: fixtures.appendingPathComponent(name)))
+            let game = try XCTUnwrap(library.games.first)
+            XCTAssertEqual(game.storeID, "480")
+            XCTAssertEqual(game.storeURL, "https://store.steampowered.com/app/480/")
+            XCTAssertEqual(game.launchCount, 7)
+            let data = try JSONEncoder().encode(library)
+            let roundtrip = try JSONDecoder().decode(LibraryFile.self, from: data)
+            XCTAssertEqual(roundtrip, library)
+            if name.contains("shared") {
+                XCTAssertEqual(game.launchKind, .executable)
+                XCTAssertNotNil(game.extra["launchAction"])
+                XCTAssertEqual(game.extra["futureInteger"], .integer(9007199254740993))
+            }
+            let raw = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+            let record = (raw["games"] as! [[String: Any]])[0]
+            XCTAssertEqual(record["storeID"] as? String, "480")
+            XCTAssertNil(record["storeId"])
+        }
+        let current = LibraryFile(games: (0..<1000).map { Game(id: String($0), name: "Game \($0)", store: .local, launchKind: .store, launchTarget: "old") })
+        let found = current.games.map { original in var game = original; game.launchTarget = "new"; return game }
+        let merged = LibraryMerge.discovery(found, into: current)
+        XCTAssertEqual(merged.added, 0)
+        XCTAssertTrue(merged.library.games.allSatisfy { $0.launchTarget == "new" })
+        XCTAssertEqual(LibraryMerge.discovery(found, into: merged.library).library, merged.library)
+    }
+    func testBoundedHTTP() async throws {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [BoundedProtocol.self]
+        let session = URLSession(configuration: config)
+        defer { session.invalidateAndCancel() }
+        for path in ["declared", "stream"] {
+            do {
+                _ = try await BoundedHTTP.data(for: URLRequest(url: URL(string: "https://fixture.itch.io/" + path)!), maximumBytes: 12, session: session)
+                failures.append("Oversized \(path) response was accepted")
+            } catch { XCTAssertTrue(error.localizedDescription.contains("limit")) }
+        }
+        let (body, _) = try await BoundedHTTP.data(for: URLRequest(url: URL(string: "https://fixture.itch.io/small")!), maximumBytes: 12, session: session)
+        XCTAssertEqual(body, Data("ok".utf8))
+        let task = Task { try await BoundedHTTP.data(for: URLRequest(url: URL(string: "https://fixture.itch.io/small")!), maximumBytes: 12, session: session) }
+        task.cancel()
+        do { _ = try await task.value; failures.append("Cancelled transfer was accepted") }
+        catch { XCTAssertTrue(error is CancellationError) }
+    }
     func testUninstallCommitFailureAndLaunchGate() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
@@ -496,6 +542,7 @@ private func XCTAssertThrowsError<T>(_ value: @autoclosure () throws -> T, line:
         }
         let suite = CoreTests()
         let tests: [(String, () throws -> Void)] = [
+            ("Native/shared wire contract and batched discovery", suite.testSharedWireContractAndBatchMerge),
             ("Uninstall save failure and launch handoff guard", suite.testUninstallCommitFailureAndLaunchGate),
             ("Local launch counts, startup center and stable session order", suite.testLocalLaunchCountsAndHomeOrder),
             ("Local launch diagnostic report integrity", suite.testLaunchReportsStayLocalAndPreserveExitDetails),
@@ -524,6 +571,8 @@ private func XCTAssertThrowsError<T>(_ value: @autoclosure () throws -> T, line:
             do { try test() } catch { failures.append("\(name): \(error.localizedDescription)") }
             print("\(failures.count == before ? "PASS" : "FAIL"): \(name)")
         }
+        do { try await suite.testBoundedHTTP(); print("PASS: declared/streaming response limits and cancellation") }
+        catch { failures.append("Bounded HTTP: \(error.localizedDescription)") }
         do { try await suite.testMetadataFallback(); print("PASS: Metadata provider failure, partial fallback and retry policy") }
         catch { failures.append("Metadata fallback: \(error.localizedDescription)") }
         do {
@@ -592,6 +641,19 @@ private final class MetadataFixtureProtocol: URLProtocol, @unchecked Sendable {
         }
         client?.urlProtocol(self, didReceive: HTTPURLResponse(url: url, statusCode: status, httpVersion: nil, headerFields: nil)!, cacheStoragePolicy: .notAllowed)
         client?.urlProtocol(self, didLoad: Data(body.utf8))
+        client?.urlProtocolDidFinishLoading(self)
+    }
+    override func stopLoading() {}
+}
+
+private final class BoundedProtocol: URLProtocol, @unchecked Sendable {
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        let small = request.url!.path == "/small"
+        let headers = request.url!.path == "/declared" ? ["Content-Length": "1000"] : nil
+        client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: headers)!, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: small ? Data("ok".utf8) : Data(repeating: 1, count: 16))
         client?.urlProtocolDidFinishLoading(self)
     }
     override func stopLoading() {}

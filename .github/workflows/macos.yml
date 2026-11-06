@@ -26,6 +26,8 @@ jobs:
           VALIDATION_BIN="$(swift build --package-path macos --show-bin-path)/JoyniteValidation"
           codesign --force --sign - "$VALIDATION_BIN"
           "$VALIDATION_BIN"
+      - name: Validate native application model
+        run: python3 macos/scripts/validate-app-model.py
       - name: Build signed application bundle
         run: macos/scripts/build-app.sh
       - uses: actions/upload-artifact@v4

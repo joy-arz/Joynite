@@ -26,7 +26,7 @@ pub struct LaunchAction {
     pub working_directory: String,
     pub run_as_admin: bool,
 }
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Game {
     pub id: String,
@@ -36,6 +36,7 @@ pub struct Game {
     pub launch_target: String,
     pub launch_action: Option<LaunchAction>,
     pub install_path: String,
+    #[serde(rename = "storeID")]
     pub store_id: String,
     pub summary: String,
     pub developer: String,
@@ -54,6 +55,7 @@ pub struct Game {
     pub custom_background: Option<String>,
     pub hidden: Option<bool>,
     pub pending_uninstall: Option<bool>,
+    #[serde(rename = "storeURL")]
     pub store_url: String,
     pub metadata_source: String,
     pub metadata_updated: Option<f64>,
@@ -64,6 +66,104 @@ pub struct Game {
     #[serde(flatten)]
     pub extra: BTreeMap<String, serde_json::Value>,
 }
+#[derive(Deserialize)]
+#[serde(remote = "Game", rename_all = "camelCase", default)]
+struct GameWire {
+    pub id: String,
+    pub name: String,
+    pub store: String,
+    pub launch_kind: String,
+    pub launch_target: String,
+    pub launch_action: Option<LaunchAction>,
+    pub install_path: String,
+    #[serde(rename = "storeID")]
+    pub store_id: String,
+    pub summary: String,
+    pub developer: String,
+    pub genres: Vec<String>,
+    pub release_date: String,
+    pub artwork: String,
+    pub background_artwork: Option<String>,
+    pub cached_artwork: Option<String>,
+    pub cached_landscape: Option<String>,
+    pub cached_background: Option<String>,
+    pub compatibility: Option<CompatibilityLaunch>,
+    pub metadata_overrides: Option<BTreeMap<String, String>>,
+    pub automatic_metadata: Option<BTreeMap<String, String>>,
+    pub custom_artwork: Option<String>,
+    pub custom_landscape: Option<String>,
+    pub custom_background: Option<String>,
+    pub hidden: Option<bool>,
+    pub pending_uninstall: Option<bool>,
+    #[serde(rename = "storeURL")]
+    pub store_url: String,
+    pub metadata_source: String,
+    pub metadata_updated: Option<f64>,
+    pub favorite: bool,
+    pub launch_count: u32,
+    pub last_played: Option<f64>,
+    pub added_at: f64,
+    #[serde(flatten)]
+    pub extra: BTreeMap<String, serde_json::Value>,
+}
+impl Default for GameWire {
+    fn default() -> Self {
+        let value = Game::default();
+        Self {
+            id: value.id,
+            name: value.name,
+            store: value.store,
+            launch_kind: value.launch_kind,
+            launch_target: value.launch_target,
+            launch_action: value.launch_action,
+            install_path: value.install_path,
+            store_id: value.store_id,
+            summary: value.summary,
+            developer: value.developer,
+            genres: value.genres,
+            release_date: value.release_date,
+            artwork: value.artwork,
+            background_artwork: value.background_artwork,
+            cached_artwork: value.cached_artwork,
+            cached_landscape: value.cached_landscape,
+            cached_background: value.cached_background,
+            compatibility: value.compatibility,
+            metadata_overrides: value.metadata_overrides,
+            automatic_metadata: value.automatic_metadata,
+            custom_artwork: value.custom_artwork,
+            custom_landscape: value.custom_landscape,
+            custom_background: value.custom_background,
+            hidden: value.hidden,
+            pending_uninstall: value.pending_uninstall,
+            store_url: value.store_url,
+            metadata_source: value.metadata_source,
+            metadata_updated: value.metadata_updated,
+            favorite: value.favorite,
+            launch_count: value.launch_count,
+            last_played: value.last_played,
+            added_at: value.added_at,
+            extra: value.extra,
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for Game {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let mut value = serde_json::Value::deserialize(deserializer)?;
+        if let Some(object) = value.as_object_mut() {
+            for (legacy, canonical) in [("storeId", "storeID"), ("storeUrl", "storeURL")] {
+                if let Some(old) = object.remove(legacy) {
+                    let old_nonempty = old.as_str().is_some_and(|v| !v.is_empty());
+                    if old_nonempty || !object.contains_key(canonical) {
+                        object.insert(canonical.into(), old);
+                    }
+                }
+            }
+        }
+        GameWire::deserialize(value).map_err(serde::de::Error::custom)
+    }
+}
+
 impl Game {
     pub fn record_launch(&mut self) {
         self.launch_count = self.launch_count.saturating_add(1);
@@ -236,5 +336,36 @@ mod local_launch_tests {
         assert_eq!(game.launch_count, u32::MAX);
         let restored: Game = serde_json::from_slice(&serde_json::to_vec(&game).unwrap()).unwrap();
         assert_eq!(restored.launch_count, u32::MAX);
+    }
+}
+
+#[cfg(test)]
+mod wire_tests {
+    use super::*;
+    #[test]
+    fn native_and_legacy_shared_fixtures_use_one_canonical_contract() {
+        for source in [
+            include_str!("../../tests/fixtures/library-v1-native.json"),
+            include_str!("../../tests/fixtures/library-v1-shared.json"),
+        ] {
+            let library: Library = serde_json::from_str(source).unwrap();
+            let game = &library.games[0];
+            assert_eq!(game.store_id, "480");
+            assert_eq!(game.store_url, "https://store.steampowered.com/app/480/");
+            assert_eq!(game.launch_count, 7);
+            let value = serde_json::to_value(&library).unwrap();
+            assert_eq!(value["games"][0]["storeID"], "480");
+            assert!(value["games"][0].get("storeId").is_none());
+            let reloaded: Library = serde_json::from_value(value).unwrap();
+            assert_eq!(reloaded.games[0].store_id, "480");
+            assert_eq!(reloaded.games[0].launch_count, 7);
+        }
+    }
+    #[test]
+    fn previously_migrated_dual_keys_are_resolved_without_duplicate_field_errors() {
+        let game: Game = serde_json::from_str(r#"{"storeID":"480","storeId":"","storeURL":"https://old.example/","storeUrl":"https://new.example/"}"#).unwrap();
+        assert_eq!(game.store_id, "480");
+        assert_eq!(game.store_url, "https://new.example/");
+        assert!(!game.extra.contains_key("storeId"));
     }
 }

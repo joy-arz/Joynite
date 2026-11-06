@@ -1,10 +1,21 @@
 import Foundation
 
-public enum Store: String, Codable, CaseIterable, Identifiable, Sendable {
-    case local = "Mac", steam = "Steam", gog = "GOG", epic = "Epic", itch = "itch.io"
+public struct Store: RawRepresentable, Codable, Hashable, CaseIterable, Identifiable, Sendable {
+    public let rawValue: String
     public var id: String { rawValue }
+    public init(rawValue: String) { self.rawValue = rawValue }
+    public init(from decoder: Decoder) throws { rawValue = try decoder.singleValueContainer().decode(String.self) }
+    public func encode(to encoder: Encoder) throws { var c = encoder.singleValueContainer(); try c.encode(rawValue) }
+    public static let local = Self(rawValue: "Mac"), genericLocal = Self(rawValue: "Local"), steam = Self(rawValue: "Steam"), gog = Self(rawValue: "GOG"), epic = Self(rawValue: "Epic"), itch = Self(rawValue: "itch.io")
+    public static let allCases: [Self] = [.local, .genericLocal, .steam, .gog, .epic, .itch]
 }
-public enum LaunchKind: String, Codable, Sendable { case application, store, compatibility }
+public struct LaunchKind: RawRepresentable, Codable, Hashable, Sendable {
+    public let rawValue: String
+    public init(rawValue: String) { self.rawValue = rawValue }
+    public init(from decoder: Decoder) throws { rawValue = try decoder.singleValueContainer().decode(String.self) }
+    public func encode(to encoder: Encoder) throws { var c = encoder.singleValueContainer(); try c.encode(rawValue) }
+    public static let application = Self(rawValue: "application"), store = Self(rawValue: "store"), compatibility = Self(rawValue: "compatibility"), executable = Self(rawValue: "executable"), desktop = Self(rawValue: "desktop")
+}
 public struct CompatibilityLaunch: Codable, Equatable, Sendable {
     public var executable: String
     public var arguments: [String]
@@ -45,6 +56,7 @@ public struct Game: Identifiable, Codable, Equatable, Sendable {
     public var favorite = false
     public var launchCount: UInt32?
     public var lastPlayed: Date?
+    public var extra: [String: JSONValue] = [:]
     public var addedAt = Date()
     public init(id: String, name: String, store: Store, launchKind: LaunchKind, launchTarget: String, installPath: String = "", storeID: String = "") {
         self.id = id; self.name = name; self.store = store; self.launchKind = launchKind
@@ -129,7 +141,7 @@ public enum LibraryError: LocalizedError {
     case invalid(String)
     public var errorDescription: String? { switch self { case .invalid(let message): return message } }
 }
-public struct LibraryFile: Codable, Sendable {
+public struct LibraryFile: Codable, Equatable, Sendable {
     public var version = 1
     public var games: [Game]
     public var folders: [String]

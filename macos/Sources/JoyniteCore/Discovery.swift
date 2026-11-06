@@ -3,6 +3,7 @@ import Foundation
 public struct DiscoveryResult: Sendable {
     public var games: [Game] = []
     public var warnings: [String] = []
+    public init(games: [Game] = [], warnings: [String] = []) { self.games = games; self.warnings = warnings }
 }
 public struct Discovery {
     private let fm = FileManager.default
