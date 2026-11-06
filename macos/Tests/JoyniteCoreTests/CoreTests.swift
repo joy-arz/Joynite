@@ -31,6 +31,11 @@ final class CoreTests {
         XCTAssertEqual(merged.added, 0)
         XCTAssertTrue(merged.library.games.allSatisfy { $0.launchTarget == "new" })
         XCTAssertEqual(LibraryMerge.discovery(found, into: merged.library).library, merged.library)
+        let installed = Game(id: "old", name: "Moved game", store: .local, launchKind: .application, launchTarget: "/old.app", installPath: "/old.app")
+        var moved = installed; moved.installPath = "/new.app"; moved.launchTarget = "/new.app"
+        let replacement = Game(id: "replacement", name: "Replacement", store: .local, launchKind: .application, launchTarget: "/old.app", installPath: "/old.app")
+        XCTAssertEqual(LibraryMerge.discovery([moved, replacement], into: LibraryFile(games: [installed])).added, 1)
+        XCTAssertEqual(LibraryMerge.discovery([replacement, moved], into: LibraryFile(games: [installed])).added, 1)
     }
     func testBoundedHTTP() async throws {
         let config = URLSessionConfiguration.ephemeral

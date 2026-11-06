@@ -5,18 +5,24 @@ public enum LibraryMerge {
         var next = current
         var indices = Dictionary(current.games.enumerated().map { ($0.element.id, $0.offset) }, uniquingKeysWith: { first, _ in first })
         func location(_ game: Game) -> String { game.installPath + "\0" + game.launchKind.rawValue }
-        var installations = Set(current.games.filter { !$0.installPath.isEmpty }.map(location))
+        var installations = Dictionary(current.games.filter { !$0.installPath.isEmpty }.map { (location($0), 1) }, uniquingKeysWith: +)
         var added = 0
-        for game in found {
+        let existing = Set(indices.keys)
+        let ordered = found.filter { existing.contains($0.id) } + found.filter { !existing.contains($0.id) }
+        for game in ordered {
             if let index = indices[game.id] {
                 if next.games[index].launchTarget != game.launchTarget { next.games[index].launchTarget = game.launchTarget }
-                if next.games[index].installPath != game.installPath { next.games[index].installPath = game.installPath }
+                if next.games[index].installPath != game.installPath {
+                    let old = next.games[index]
+                    if !old.installPath.isEmpty { installations[location(old), default: 0] -= 1 }
+                    next.games[index].installPath = game.installPath
+                    if !game.installPath.isEmpty { installations[location(next.games[index]), default: 0] += 1 }
+                }
                 if next.games[index].compatibility != game.compatibility { next.games[index].compatibility = game.compatibility }
-                if !game.installPath.isEmpty { installations.insert(location(game)) }
-            } else if game.installPath.isEmpty || !installations.contains(location(game)) {
+            } else if game.installPath.isEmpty || installations[location(game), default: 0] == 0 {
                 indices[game.id] = next.games.count
                 next.games.append(game)
-                if !game.installPath.isEmpty { installations.insert(location(game)) }
+                if !game.installPath.isEmpty { installations[location(game), default: 0] += 1 }
                 added += 1
             }
         }
